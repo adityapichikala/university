@@ -1,0 +1,177 @@
+@import 'tailwindcss';
+
+/* ============================================================================
+   University ERP — Design System
+   Single source of truth. Every screen inherits these tokens; do not hard-code
+   hex values or font families in components.
+   ========================================================================= */
+
+@theme {
+  /* ── Brand palette ─────────────────────────────────────────────────────── */
+  --color-primary: #000000; /* headings, primary buttons, active text */
+  --color-accent: #4b41e1; /* indigo — accents & active states ONLY */
+  --color-accent-soft: #eeecfd; /* indigo tint for active nav background */
+  --color-accent-hover: #3f36c9;
+  --color-background: #f8f9ff; /* app canvas */
+  --color-surface: #ffffff; /* cards, sidebar, header */
+
+  /* ── Text ──────────────────────────────────────────────────────────────── */
+  --color-foreground: #0b0b0f;
+  --color-muted: #65677a;
+  --color-subtle: #9a9cb0;
+  --color-border: #e9eaf6;
+  --color-border-strong: #d8daee;
+
+  /* ── Semantic ──────────────────────────────────────────────────────────── */
+  --color-success: #16a34a;
+  --color-success-soft: #e8f8ee;
+  --color-warning: #d97706;
+  --color-warning-soft: #fdf3e3;
+  --color-danger: #dc2626;
+  --color-danger-soft: #fdecec;
+
+  /* ── Typography ────────────────────────────────────────────────────────── */
+  /* Defined in app/layout.tsx via next/font (self-hosted, zero layout shift). */
+  --font-heading: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
+
+  /* ── Radii ─────────────────────────────────────────────────────────────── */
+  --radius-card: 0.75rem; /* rounded-xl — every card */
+
+  /* ── Elevation (soft, modern SaaS) ─────────────────────────────────────── */
+  --shadow-soft: 0 1px 2px 0 rgb(16 17 40 / 0.04), 0 1px 8px -2px rgb(16 17 40 / 0.06);
+  --shadow-card: 0 1px 3px 0 rgb(16 17 40 / 0.05), 0 6px 20px -8px rgb(16 17 40 / 0.10);
+  --shadow-lift: 0 2px 6px -1px rgb(16 17 40 / 0.08), 0 12px 32px -12px rgb(16 17 40 / 0.16);
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-body);
+    font-feature-settings: 'cv02', 'cv03', 'cv04';
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+  }
+
+  /* Every number, ID, roll number and KPI renders in JetBrains Mono. */
+  .num,
+  code,
+  kbd,
+  pre,
+  input[type='number'] {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+  }
+}
+
+/* ── Material Symbols Outlined (the only icon set) ──────────────────────────── */
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 20;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* ── Utilities ──────────────────────────────────────────────────────────────── */
+
+@utility card {
+  background-color: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-soft);
+  border: 1px solid var(--color-border);
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────────── */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-fade {
+  animation: fade-in 0.18s ease-out;
+}
+
+.animate-sheet {
+  animation: sheet-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade,
+  .animate-sheet {
+    animation: none;
+  }
+}
+
+@utility scrollbar-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-strong);
+    border-radius: 9999px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

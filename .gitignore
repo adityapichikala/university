@@ -1,0 +1,24 @@
+node_modules
+.next
+# Stale build caches parked with `mv .next .next-<name>` before a clean rebuild.
+# Safe to delete.
+.next-*
+.tmp-test
+.workbuddy-ai
+out
+build
+.vercel
+coverage
+.DS_Store
+*.pem
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env
+.env.*
+!.env.example
+prisma/dev.db
+prisma/dev.db-journal
+next-env.d.ts
+*.tsbuildinfo
