@@ -36,35 +36,38 @@ model College {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  departments        Department[]
-  users              User[]
-  classes            Class[]
-  courses            Course[]
-  enrollments        CourseEnrollment[]
-  sectionAccess      CourseSectionAccess[]
-  admissions         Admission[]
-  timetableSlots     TimetableSlot[]
-  attendances        Attendance[]
-  assignments        Assignment[]
-  submissions        Submission[]
-  grades             Grade[]
-  exams              Exam[]
-  examResults        ExamResult[]
-  feeStructures      FeeStructure[]
-  feeRecords         FeeRecord[]
-  feePayments        FeePayment[]
-  libraryItems       LibraryItem[]
-  libraryIssues      LibraryIssue[]
-  hostelRooms        HostelRoom[]
-  hostelAllocations  HostelAllocation[]
-  employees          Employee[]
-  leaveRequests      LeaveRequest[]
-  placementDrives    PlacementDrive[]
+  departments           Department[]
+  users                 User[]
+  classes               Class[]
+  courses               Course[]
+  enrollments           CourseEnrollment[]
+  sectionAccess         CourseSectionAccess[]
+  admissions            Admission[]
+  timetableSlots        TimetableSlot[]
+  attendances           Attendance[]
+  assignments           Assignment[]
+  submissions           Submission[]
+  grades                Grade[]
+  exams                 Exam[]
+  examResults           ExamResult[]
+  calendarDays          AcademicCalendarDay[]
+  feeStructures         FeeStructure[]
+  feeRecords            FeeRecord[]
+  feePayments           FeePayment[]
+  libraryItems          LibraryItem[]
+  libraryIssues         LibraryIssue[]
+  hostelRooms           HostelRoom[]
+  hostelAllocations     HostelAllocation[]
+  hostelLeaves          HostelLeave[]
+  semesters             Semester[]
+  employees             Employee[]
+  leaveRequests         LeaveRequest[]
+  placementDrives       PlacementDrive[]
   placementApplications PlacementApplication[]
-  notifications      Notification[]
-  certificates       Certificate[]
-  parentLinks        ParentChild[]
-  agentActionLogs    AgentActionLog[]
+  notifications         Notification[]
+  certificates          Certificate[]
+  parentLinks           ParentChild[]
+  agentActionLogs       AgentActionLog[]
 }
 
 model Department {
@@ -75,36 +78,49 @@ model Department {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  college      College  @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  hod          User?    @relation("DepartmentHOD", fields: [hodUserId], references: [id])
-  users        User[]   @relation("UserDepartment")
-  courses      Course[]
-  classes      Class[]
-  employees    Employee[]
+  college       College        @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  hod           User?          @relation("DepartmentHOD", fields: [hodUserId], references: [id])
+  users         User[]         @relation("UserDepartment")
+  courses       Course[]
+  classes       Class[]
+  employees     Employee[]
   notifications Notification[]
 
   @@index([collegeId])
 }
 
 model User {
-  id            String   @id @default(cuid())
-  regno         String   @unique
-  name          String
-  email         String   @unique
-  passwordHash  String
-  role          String
-  collegeId     String?
-  departmentId  String?
-  status        String   @default("ACTIVE")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String    @id @default(cuid())
+  regno        String    @unique
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         String
+  collegeId    String?
+  departmentId String?
+  status       String    @default("ACTIVE")
+  /// A student's home section. Teachers see this when marking attendance, and
+  /// it doubles as the scope for their roll number — roll numbers restart at 1
+  /// in every section, so uniqueness is (classId, rollNo), never rollNo alone.
+  classId      String?
+  /// Roll number *within the section*. Null for staff, who have no roll call.
+  rollNo       String?
+  /// Password reset: a bcrypt hash of the 6-digit OTP, never the code itself.
+  /// Null unless a reset is in flight; cleared the moment it is used.
+  resetOtp     String?
+  /// Absolute expiry for that OTP (10 minutes from issue). Checked before the
+  /// hash comparison so a stale code is refused without doing the bcrypt work.
+  otpExpiry    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  college               College?     @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  department            Department?  @relation("UserDepartment", fields: [departmentId], references: [id])
-  hodOfDepartment       Department?  @relation("DepartmentHOD")
+  college         College?    @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  department      Department? @relation("UserDepartment", fields: [departmentId], references: [id])
+  class           Class?      @relation("UserClass", fields: [classId], references: [id], onDelete: SetNull)
+  hodOfDepartment Department? @relation("DepartmentHOD")
 
   // Teaching
-  coursesTaught         Course[]     @relation("CourseTeacher")
+  coursesTaught Course[] @relation("CourseTeacher")
 
   // Student relations
   enrollments           CourseEnrollment[]
@@ -115,38 +131,45 @@ model User {
   feePaymentsReceived   FeePayment[]
   libraryIssues         LibraryIssue[]
   hostelAllocations     HostelAllocation[]
+  hostelLeaves          HostelLeave[]
   placementApplications PlacementApplication[]
   certificates          Certificate[]
 
   // Teacher / staff relations
-  assignmentsCreated    Assignment[]
-  gradesGiven           Grade[]
+  assignmentsCreated Assignment[]
+  gradesGiven        Grade[]
 
   // Employee
-  employee              Employee?
+  employee Employee?
 
   // Family: who this parent may view, and who may view this student
-  children              ParentChild[] @relation("ParentLinks")
-  guardians             ParentChild[] @relation("ChildLinks")
+  children  ParentChild[] @relation("ParentLinks")
+  guardians ParentChild[] @relation("ChildLinks")
 
   // Admin
-  notificationsCreated  Notification[]
-  announcementTargets   NotificationTarget[]
-  agentActionsApproved  AgentActionLog[]
-  admissionsConverted   Admission[]      @relation("AdmissionConvertedBy")
+  notificationsCreated Notification[]
+  announcementTargets  NotificationTarget[]
+  agentActionsApproved AgentActionLog[]
+  admissionsConverted  Admission[]           @relation("AdmissionConvertedBy")
+  hostelLeavesDecided  HostelLeave[]         @relation("HostelLeaveDecidedBy")
+  calendarDaysCreated  AcademicCalendarDay[]
 
   // Tier-2 RBAC: per-user permission overrides
-  permissionOverrides   UserPermission[]
+  permissionOverrides UserPermission[]
 
+  /// Roll numbers are unique *within a section*, not across the college.
+  /// SQLite permits many NULLs here, so staff (classId NULL) are unaffected.
+  @@unique([classId, rollNo])
   @@index([collegeId])
   @@index([role])
+  @@index([classId])
 }
 
 // ─── Tier 2 RBAC: Permission layer (architecture doc §4.1) ───────────────────
 
 model Permission {
   id          String   @id @default(cuid())
-  key         String   @unique   // e.g. "grade.entry", "lms.access"
+  key         String   @unique // e.g. "grade.entry", "lms.access"
   description String
   createdAt   DateTime @default(now())
 
@@ -191,20 +214,28 @@ model Class {
   collegeId    String
   departmentId String
   semester     Int
+  /// The semester record this section sits in. `semester` (the int) is kept for
+  /// display and sorting; this is the link that makes filtering unambiguous.
+  semesterId   String?
   batchYear    Int
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  college        College   @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  department     Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  college        College               @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  department     Department            @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  semesterRecord Semester?             @relation(fields: [semesterId], references: [id], onDelete: SetNull)
   enrollments    CourseEnrollment[]
+  /// Students whose home section this is.
+  students       User[]                @relation("UserClass")
   sectionAccess  CourseSectionAccess[]
   timetableSlots TimetableSlot[]
   notifications  Notification[]
+  calendarDays   AcademicCalendarDay[]
 
   @@unique([collegeId, name])
   @@index([collegeId])
   @@index([departmentId])
+  @@index([semesterId])
 }
 
 model Course {
@@ -223,9 +254,9 @@ model Course {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  college        College   @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  department     Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  teacher        User?     @relation("CourseTeacher", fields: [teacherId], references: [id])
+  college        College               @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  department     Department            @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  teacher        User?                 @relation("CourseTeacher", fields: [teacherId], references: [id])
   enrollments    CourseEnrollment[]
   sectionAccess  CourseSectionAccess[]
   timetableSlots TimetableSlot[]
@@ -289,19 +320,19 @@ model CourseSectionAccess {
 // ─── Admissions ─────────────────────────────────────────────────────────────
 
 model Admission {
-  id                 String   @id @default(cuid())
-  collegeId          String
-  applicantName      String
-  email              String
-  phone              String
-  programAppliedFor  String
-  documentsUrl       String?
-  status             String   @default("PENDING")
-  meritScore         Float?
-  convertedToUserId  String?
-  convertedByUserId  String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                String   @id @default(cuid())
+  collegeId         String
+  applicantName     String
+  email             String
+  phone             String
+  programAppliedFor String
+  documentsUrl      String?
+  status            String   @default("PENDING")
+  meritScore        Float?
+  convertedToUserId String?
+  convertedByUserId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   college     College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
   convertedBy User?   @relation("AdmissionConvertedBy", fields: [convertedByUserId], references: [id])
@@ -317,9 +348,9 @@ model TimetableSlot {
   collegeId String
   courseId  String
   classId   String
-  dayOfWeek Int      // 0=Sunday … 6=Saturday
-  startTime String   // "09:00"
-  endTime   String   // "10:00"
+  dayOfWeek Int // 0=Sunday … 6=Saturday
+  startTime String // "09:00"
+  endTime   String // "10:00"
   room      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -365,7 +396,7 @@ model Assignment {
   dueDate          DateTime
   maxMarks         Float
   rubric           String?
-  allowedFileTypes String   // comma separated: "pdf,docx,zip"
+  allowedFileTypes String // comma separated: "pdf,docx,zip"
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -413,7 +444,7 @@ model Grade {
   gradedByUserId   String
   gradedAt         DateTime @default(now())
   aiSuggestedScore Float?
-  history          String?  // serialized JSON (re-grade trail)
+  history          String? // serialized JSON (re-grade trail)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -426,22 +457,110 @@ model Grade {
 
 // ─── Examinations & results ─────────────────────────────────────────────────
 
-model Exam {
-  id        String   @id @default(cuid())
-  collegeId String
-  courseId  String
-  examDate  DateTime
-  examType  String
-  maxMarks  Float
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+/// A semester is a real record with its own id, not a bare integer.
+///
+/// Results are filtered by semester id rather than by number, so renaming or
+/// renumbering a semester never orphans a student's history.
+/// Hostel leave — a student asking to be away from their room overnight.
+///
+/// Deliberately separate from `LeaveRequest`, which is staff leave tied to an
+/// Employee record. A student has no Employee row, and the two flows have
+/// different approvers (warden vs HOD/HR).
+model HostelLeave {
+  id              String    @id @default(cuid())
+  collegeId       String
+  studentId       String
+  fromDate        DateTime
+  toDate          DateTime
+  reason          String
+  /// PENDING | APPROVED | REJECTED | CANCELLED
+  status          String    @default("PENDING")
+  decidedByUserId String?
+  decidedAt       DateTime?
+  decisionNote    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  college College      @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  course  Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  results ExamResult[]
+  college   College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  student   User    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  decidedBy User?   @relation("HostelLeaveDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([collegeId])
+  @@index([studentId])
+  @@index([status])
+}
+
+model Semester {
+  id        String    @id @default(cuid())
+  collegeId String
+  /// 1-based position in the programme (1, 2, 3 …).
+  number    Int
+  /// Display name, e.g. "Semester 3".
+  name      String
+  /// The semester currently running — drives the default filter on results.
+  isCurrent Boolean   @default(false)
+  startDate DateTime?
+  endDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  college College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  classes Class[]
+  exams   Exam[]
+
+  @@unique([collegeId, number])
+  @@index([collegeId])
+}
+
+model Exam {
+  id         String   @id @default(cuid())
+  collegeId  String
+  courseId   String
+  examDate   DateTime
+  examType   String
+  maxMarks   Float
+  /// Which semester this exam belongs to; results are grouped by it.
+  semesterId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  college  College      @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  course   Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  semester Semester?    @relation(fields: [semesterId], references: [id], onDelete: SetNull)
+  results  ExamResult[]
 
   @@index([collegeId])
   @@index([courseId])
+  @@index([semesterId])
+  @@index([examDate])
+}
+
+/// Non-teaching days: public holidays, institute closures, exam weeks declared
+/// as no-class days. A separate table rather than a flag on TimetableSlot
+/// because a holiday cancels *every* slot on a date — including ones added
+/// after the holiday was declared.
+model AcademicCalendarDay {
+  id              String   @id @default(cuid())
+  collegeId       String
+  /// The whole day this entry covers, stored at UTC midnight. Date-only on
+  /// purpose: a holiday is not an instant.
+  date            DateTime
+  title           String
+  /// HOLIDAY | CLOSURE | BREAK | EVENT — SQLite has no enum, so
+  /// lib/calendar.ts is the source of truth (CALENDAR_DAY_KINDS).
+  kind            String   @default("HOLIDAY")
+  /// Null = the whole college. Set = only this section is affected.
+  classId         String?
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  college   College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  class     Class?  @relation(fields: [classId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdByUserId], references: [id])
+
+  @@unique([collegeId, date, classId])
+  @@index([collegeId, date])
+  @@index([classId])
 }
 
 model ExamResult {
@@ -517,9 +636,9 @@ model FeePayment {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  college   College   @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  feeRecord FeeRecord @relation(fields: [feeRecordId], references: [id], onDelete: Cascade)
-  receivedBy User?    @relation(fields: [receivedById], references: [id])
+  college    College   @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  feeRecord  FeeRecord @relation(fields: [feeRecordId], references: [id], onDelete: Cascade)
+  receivedBy User?     @relation(fields: [receivedById], references: [id])
 
   @@index([collegeId])
   @@index([feeRecordId])
@@ -679,30 +798,30 @@ model PlacementApplication {
 // ─── Notifications ──────────────────────────────────────────────────────────
 
 model Notification {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   collegeId          String?
   title              String
   body               String
   // LOW | NORMAL | URGENT — SQLite has no enum, so lib/announcements.ts is the
   // source of truth (ANNOUNCEMENT_PRIORITIES / isAnnouncementPriority).
-  priority           String   @default("NORMAL")
+  priority           String    @default("NORMAL")
   // After this instant the notice is no longer served to anyone. Null = never
   // expires. Expiry is checked on read, so a notice that lapses while a tab is
   // open disappears on the next fetch rather than needing a cron job.
   expiresAt          DateTime?
-  targetRole         String?  // null = all roles
+  targetRole         String? // null = all roles
   targetDepartmentId String?
   targetClassId      String?
   createdByUserId    String
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  college           College?            @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  createdBy         User                @relation(fields: [createdByUserId], references: [id])
-  targetDepartment  Department?         @relation(fields: [targetDepartmentId], references: [id])
-  targetClass       Class?              @relation(fields: [targetClassId], references: [id])
-  reads             NotificationRead[]
-  targets           NotificationTarget[]
+  college          College?             @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  createdBy        User                 @relation(fields: [createdByUserId], references: [id])
+  targetDepartment Department?          @relation(fields: [targetDepartmentId], references: [id])
+  targetClass      Class?               @relation(fields: [targetClassId], references: [id])
+  reads            NotificationRead[]
+  targets          NotificationTarget[]
 
   @@index([collegeId])
   @@index([targetRole])
@@ -786,7 +905,7 @@ model AgentActionLog {
   targetEntity     String
   status           String   @default("PENDING")
   approvedByUserId String?
-  details          String   // serialized JSON: { before, after, ip, … }
+  details          String // serialized JSON: { before, after, ip, … }
   // Tamper-evident chain: hash = sha256(prevHash + canonical(row)).
   // The governance banner shows the head of this chain.
   hash             String?

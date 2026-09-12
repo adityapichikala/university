@@ -13,6 +13,10 @@ interface Student {
   id: string
   regno: string
   name: string
+  /** Roll number within the section — not unique college-wide. */
+  rollNo: string | null
+  /** Home section, e.g. "CSE-A". */
+  section: string | null
 }
 
 interface Props {
@@ -182,16 +186,22 @@ export function AttendanceClient({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-y border-border text-xs uppercase tracking-wide text-muted">
-                    <th className="px-4 py-2.5 text-left font-medium">Reg no</th>
+                    <th className="px-4 py-2.5 text-left font-medium">Roll no</th>
                     <th className="px-4 py-2.5 text-left font-medium">Name</th>
+                    <th className="px-4 py-2.5 text-left font-medium">Reg no</th>
+                    <th className="px-4 py-2.5 text-left font-medium">Section</th>
                     <th className="px-4 py-2.5 text-right font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {roster.map((s) => (
                     <tr key={s.id} className="border-b border-border last:border-0">
-                      <td className="num px-4 py-3 font-medium text-foreground">{s.regno}</td>
+                      <td className="num px-4 py-3 font-medium text-foreground">
+                        {s.rollNo ?? '—'}
+                      </td>
                       <td className="px-4 py-3 text-foreground">{s.name}</td>
+                      <td className="num px-4 py-3 text-muted">{s.regno}</td>
+                      <td className="px-4 py-3 text-muted">{s.section ?? '—'}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1.5">
                           {ATTENDANCE_STATUSES.map((status) => {

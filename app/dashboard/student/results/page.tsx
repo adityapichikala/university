@@ -1,6 +1,8 @@
+import Link from 'next/link'
 import { prisma } from '@/lib/db'
 import { requireUser, scopes } from '@/lib/rbac'
 import { buildTranscript } from '@/lib/results'
+import { cn } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { TranscriptPanel } from './TranscriptPanel'
 
@@ -13,14 +15,52 @@ export const metadata = { title: 'My Results · Apex University ERP' }
  * An unpublished result simply is not in the result set, so there is no way to
  * render it by accident.
  */
-export default async function StudentResultsPage() {
+export default async function StudentResultsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sem?: string }>
+}) {
   const ctx = await requireUser({ route: 'student' })
+  const sp = await searchParams
+
+  // The student's own section determines their semester, so the default filter
+  // follows them as they progress rather than being pinned to a constant.
+  const myClass = ctx.user.classId
+    ? await prisma.class.findUnique({
+        where: { id: ctx.user.classId },
+        select: { semesterId: true, semester: true },
+      })
+    : null
+  const mySemesterId = myClass?.semesterId ?? null
+
+  // Only semesters this student actually has published results in are offered —
+  // plus their own, so an empty semester still reads as "nothing yet" rather
+  // than vanishing from the selector.
+  const semesters = await prisma.semester.findMany({
+    where: {
+      collegeId: ctx.user.collegeId ?? undefined,
+      OR: [
+        { exams: { some: { results: { some: { studentId: ctx.user.id, publishedAt: { not: null } } } } } },
+        ...(mySemesterId ? [{ id: mySemesterId }] : []),
+      ],
+    },
+    select: { id: true, number: true, name: true, isCurrent: true },
+    orderBy: { number: 'asc' },
+  })
+
+  const requested = sp.sem && semesters.some((s) => s.id === sp.sem) ? sp.sem : null
+  const selectedSemesterId =
+    requested ??
+    (semesters.some((s) => s.id === mySemesterId) ? mySemesterId : null) ??
+    semesters[semesters.length - 1]?.id ??
+    null
 
   const results = await prisma.examResult.findMany({
     where: {
       ...scopes.college(ctx),
       studentId: ctx.user.id,
       publishedAt: { not: null },
+      ...(selectedSemesterId ? { exam: { semesterId: selectedSemesterId } } : {}),
     },
     select: {
       id: true,
@@ -33,6 +73,7 @@ export default async function StudentResultsPage() {
           examType: true,
           examDate: true,
           maxMarks: true,
+          semesterId: true,
           course: { select: { code: true, name: true } },
         },
       },
@@ -56,9 +97,56 @@ export default async function StudentResultsPage() {
 
       {transcript ? <TranscriptPanel transcript={transcript} /> : null}
 
+      {/* Semester switcher. Links, not client state — the filter is shareable
+          and survives a refresh. */}
+      {semesters.length > 0 ? (
+        <div className="mt-6">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-heading text-sm font-semibold text-foreground">Semester</h2>
+            {myClass ? (
+              <p className="text-xs text-subtle">
+                You are in <span className="num">Semester {myClass.semester}</span>
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {semesters.map((s) => {
+              const active = s.id === selectedSemesterId
+              return (
+                <Link
+                  key={s.id}
+                  href={`/dashboard/student/results?sem=${s.id}`}
+                  aria-current={active ? 'true' : undefined}
+                  className={cn(
+                    'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                    active
+                      ? 'border-accent bg-accent-soft text-accent'
+                      : 'border-border bg-surface text-muted hover:border-border-strong hover:text-foreground'
+                  )}
+                >
+                  {s.name}
+                  {s.isCurrent ? <span className="ml-1.5 text-subtle">· current</span> : null}
+                </Link>
+              )
+            })}
+            {selectedSemesterId ? (
+              <Link
+                href="/dashboard/student/results"
+                className="rounded-lg px-2 py-1.5 text-xs text-muted underline-offset-2 hover:text-accent hover:underline"
+              >
+                All
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-6">
         <h2 className="mb-3 font-heading text-sm font-semibold text-foreground">
           Exam-by-exam
+          {selectedSemesterId
+            ? ` · ${semesters.find((s) => s.id === selectedSemesterId)?.name ?? ''}`
+            : ''}
         </h2>
         {results.length === 0 ? (
           <Card>

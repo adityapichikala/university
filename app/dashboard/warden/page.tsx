@@ -5,6 +5,7 @@ import { roomLabel } from '@/lib/hostel'
 import { HOSTEL_ALLOCATION_SELECT } from '@/lib/hostel-query'
 import { ToastProvider } from '@/components/ui/toast'
 import { WardenWorkspace } from './WardenWorkspace'
+import { HostelLeaveQueue } from './HostelLeaveQueue'
 
 export const metadata = { title: 'Hostel · Apex University ERP' }
 
@@ -36,6 +37,45 @@ export default async function WardenPage() {
       orderBy: { regno: 'asc' },
     }),
   ])
+
+  // A student without a bed can still file leave, so the queue is queried
+  // independently of allocations and joined in memory by student id.
+  const leaves = await prisma.hostelLeave.findMany({
+    where: scopes.college(ctx),
+    select: {
+      id: true,
+      fromDate: true,
+      toDate: true,
+      reason: true,
+      status: true,
+      decisionNote: true,
+      decidedAt: true,
+      studentId: true,
+      student: { select: { name: true, regno: true } },
+    },
+    orderBy: [{ status: 'asc' }, { fromDate: 'asc' }],
+    take: 300,
+  })
+
+  const bedByStudent = new Map<string, string>()
+  for (const a of allocations) {
+    if (a.vacatedAt) continue
+    bedByStudent.set(a.student.id, roomLabel(a.room.block, a.room.roomNumber))
+  }
+
+  const leaveRows = leaves.map((l) => ({
+    id: l.id,
+    studentRegno: l.student.regno,
+    studentName: l.student.name,
+    roomLabel: bedByStudent.get(l.studentId) ?? null,
+    fromDate: l.fromDate.toISOString().slice(0, 10),
+    toDate: l.toDate.toISOString().slice(0, 10),
+    nights: Math.max(1, Math.round((l.toDate.getTime() - l.fromDate.getTime()) / 86_400_000)),
+    reason: l.reason,
+    status: l.status,
+    note: l.decisionNote,
+    decidedAt: l.decidedAt ? l.decidedAt.toISOString().slice(0, 10) : null,
+  }))
 
   // One pass over the allocations, then fold it into each room.
   const liveByRoom = new Map<string, number>()
@@ -90,6 +130,10 @@ export default async function WardenPage() {
           }))}
           students={students.map((s) => ({ ...s, housed: housed.has(s.id) }))}
         />
+
+        <div className="mt-6">
+          <HostelLeaveQueue rows={leaveRows} />
+        </div>
       </ToastProvider>
     </div>
   )

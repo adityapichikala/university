@@ -1434,6 +1434,203 @@ async function main() {
     })
   }
 
+  // ── Semesters ────────────────────────────────────────────────────────────
+  // Real records with ids: results are filtered by semester id, so renumbering
+  // can never orphan a student's history.
+  await prisma.semester.deleteMany({ where: { collegeId: COLLEGE_ID } })
+  const SEMESTER_SPECS = [
+    { number: 1, name: 'Semester 1', isCurrent: false },
+    { number: 2, name: 'Semester 2', isCurrent: false },
+    { number: 3, name: 'Semester 3', isCurrent: false },
+    { number: 4, name: 'Semester 4', isCurrent: false },
+    { number: 5, name: 'Semester 5', isCurrent: false },
+  ]
+  const semesters = new Map<number, string>()
+  for (const spec of SEMESTER_SPECS) {
+    const row = await prisma.semester.create({
+      data: { collegeId: COLLEGE_ID, ...spec },
+      select: { id: true, number: true },
+    })
+    semesters.set(row.number, row.id)
+  }
+
+  // Point each section at its semester record…
+  const allClasses = await prisma.class.findMany({
+    where: { collegeId: COLLEGE_ID },
+    select: { id: true, semester: true },
+  })
+  for (const klass of allClasses) {
+    await prisma.class.update({
+      where: { id: klass.id },
+      data: { semesterId: semesters.get(klass.semester) ?? null },
+    })
+  }
+
+  // "Current" is derived, never hardcoded — it is whichever semester holds the
+  // most students, so the results page defaults to where the cohort actually is.
+  const busiest = await prisma.class.findFirst({
+    where: { collegeId: COLLEGE_ID },
+    orderBy: { students: { _count: 'desc' } },
+    select: { semesterId: true },
+  })
+  if (busiest?.semesterId) {
+    await prisma.semester.updateMany({
+      where: { collegeId: COLLEGE_ID },
+      data: { isCurrent: false },
+    })
+    await prisma.semester.update({
+      where: { id: busiest.semesterId },
+      data: { isCurrent: true },
+    })
+  }
+
+  // …and every exam too, so results can be grouped by semester.
+  const allExams = await prisma.exam.findMany({
+    where: { collegeId: COLLEGE_ID },
+    select: { id: true, courseId: true },
+  })
+  const courseToSemester = new Map<string, string | null>()
+  const enrollmentsForCourses = await prisma.courseEnrollment.findMany({
+    where: { collegeId: COLLEGE_ID },
+    select: { courseId: true, class: { select: { semester: true } } },
+  })
+  for (const e of enrollmentsForCourses) {
+    if (courseToSemester.has(e.courseId)) continue
+    courseToSemester.set(e.courseId, semesters.get(e.class?.semester ?? 4) ?? null)
+  }
+  for (const exam of allExams) {
+    await prisma.exam.update({
+      where: { id: exam.id },
+      data: { semesterId: courseToSemester.get(exam.courseId) ?? semesters.get(4) ?? null },
+    })
+  }
+
+  // ── Hostel leave ─────────────────────────────────────────────────────────
+  // One approved and one pending, so both the list and the slip are visible
+  // without submitting anything first.
+  await prisma.hostelLeave.deleteMany({ where: { collegeId: COLLEGE_ID } })
+  const HOSTEL_LEAVE_SPECS = [
+    {
+      regno: 'STU001',
+      fromDaysAgo: 20,
+      nights: 3,
+      reason: 'Family wedding in Pune. Contact number unchanged.',
+      status: 'APPROVED',
+      decidedDaysAgo: 19,
+    },
+    {
+      regno: 'STU002',
+      fromDaysAgo: -6,
+      nights: 2,
+      reason: 'Sister’s convocation at IIT Madras.',
+      status: 'PENDING',
+    },
+  ]
+  const wardenUser = await prisma.user.findUnique({
+    where: { regno: 'WDN001' },
+    select: { id: true },
+  })
+  for (const spec of HOSTEL_LEAVE_SPECS) {
+    const student = await prisma.user.findUnique({
+      where: { regno: spec.regno },
+      select: { id: true },
+    })
+    if (!student) continue
+    const from = daysAgo(spec.fromDaysAgo)
+    const to = new Date(from.getTime() + spec.nights * 24 * 60 * 60 * 1000)
+    const decided =
+      'decidedDaysAgo' in spec && typeof spec.decidedDaysAgo === 'number'
+        ? daysAgo(spec.decidedDaysAgo)
+        : null
+    await prisma.hostelLeave.create({
+      data: {
+        collegeId: COLLEGE_ID,
+        studentId: student.id,
+        fromDate: from,
+        toDate: to,
+        reason: spec.reason,
+        status: spec.status,
+        decidedByUserId: decided ? wardenUser?.id ?? null : null,
+        decidedAt: decided,
+        createdAt: daysAgo(spec.fromDaysAgo > 0 ? spec.fromDaysAgo + 4 : 1),
+      },
+    })
+  }
+
+  // ── Student sections & roll numbers ──────────────────────────────────────
+  // A student belongs to one home section and carries a roll number that is
+  // unique *within* that section — so roll 1 exists in every section. This is
+  // what a teacher sees on the attendance roll alongside the regno.
+  const studentUsers = await prisma.user.findMany({
+    where: { collegeId: COLLEGE_ID, role: 'STUDENT' },
+    select: { id: true, regno: true },
+    orderBy: { regno: 'asc' },
+  })
+  const sectionRows = await prisma.class.findMany({
+    where: { collegeId: COLLEGE_ID },
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  })
+
+  if (sectionRows.length > 0) {
+    const counters = new Map<string, number>()
+    for (const [index, student] of studentUsers.entries()) {
+      const section = sectionRows[index % sectionRows.length]
+      const next = (counters.get(section.id) ?? 0) + 1
+      counters.set(section.id, next)
+      await prisma.user.update({
+        where: { id: student.id },
+        data: { classId: section.id, rollNo: String(next).padStart(2, '0') },
+      })
+    }
+  }
+
+  // ── Academic calendar ────────────────────────────────────────────────────
+  // Non-teaching days. Deliberately a mix of college-wide and section-only so
+  // the calendar's "Whole college" / "Your section only" subtitle has both
+  // cases covered on a fresh database.
+  await prisma.academicCalendarDay.deleteMany({ where: { collegeId: COLLEGE_ID } })
+  const adminUser = await prisma.user.findFirst({
+    where: { collegeId: COLLEGE_ID, role: 'ADMIN' },
+    select: { id: true },
+  })
+  const firstSection = sectionRows[0]?.id ?? null
+
+  const CALENDAR_SPECS: {
+    inDays: number
+    title: string
+    kind: string
+    sectionOnly?: boolean
+  }[] = [
+    { inDays: -21, title: 'Founders’ Day', kind: 'HOLIDAY' },
+    { inDays: -9, title: 'Mid-semester break', kind: 'BREAK' },
+    { inDays: 4, title: 'Institute Day', kind: 'EVENT' },
+    { inDays: 11, title: 'Public holiday — festival', kind: 'HOLIDAY' },
+    { inDays: 15, title: 'Local body election', kind: 'CLOSURE' },
+    { inDays: 6, title: 'Section industrial visit', kind: 'EVENT', sectionOnly: true },
+    { inDays: 23, title: 'Semester-end examinations begin', kind: 'EVENT' },
+  ]
+
+  if (adminUser) {
+    // A day offset relative to *today*, but at UTC midnight — a holiday is a
+    // date, not an instant, and the calendar compares date keys.
+    const todayMidnight = new Date()
+    todayMidnight.setUTCHours(0, 0, 0, 0)
+    for (const spec of CALENDAR_SPECS) {
+      const date = new Date(todayMidnight.getTime() + spec.inDays * 86_400_000)
+      await prisma.academicCalendarDay.create({
+        data: {
+          collegeId: COLLEGE_ID,
+          date,
+          title: spec.title,
+          kind: spec.kind,
+          classId: spec.sectionOnly ? firstSection : null,
+          createdByUserId: adminUser.id,
+        },
+      })
+    }
+  }
+
   console.log('\n  Seed complete')
   console.log('  ─────────────────────────────────────────')
   for (const user of [...DEMO_USERS, ...EXTRA_USERS]) {

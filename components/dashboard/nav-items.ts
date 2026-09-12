@@ -51,6 +51,7 @@ export function getNav(role: Role): NavSection[] {
           items: [
             { label: 'My Courses', icon: 'menu_book', href: `/dashboard/${slug}/courses` },
             { label: 'Timetable', icon: 'calendar_month', href: `/dashboard/${slug}/timetable` },
+            { label: 'Calendar', icon: 'event', href: `/dashboard/${slug}/calendar` },
             { label: 'Attendance', icon: 'fact_check', href: `/dashboard/${slug}/attendance` },
             { label: 'Assignments', icon: 'assignment', href: `/dashboard/${slug}/assignments` },
             { label: 'Results', icon: 'military_tech', href: `/dashboard/${slug}/results` },

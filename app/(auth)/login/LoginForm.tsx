@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -104,6 +105,15 @@ export function LoginForm() {
               <span>{error}</span>
             </div>
           )}
+
+          <div className="flex justify-end">
+            <Link
+              href="/forgot-password"
+              className="text-xs text-muted underline-offset-2 hover:text-accent hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
 
           <Button type="submit" variant="primary" size="lg" className="w-full" disabled={loading}>
             {loading ? 'Signing in…' : 'Sign in'}

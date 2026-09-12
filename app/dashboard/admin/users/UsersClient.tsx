@@ -272,6 +272,17 @@ export function UsersClient({
           initialPageSize={10}
           emptyTitle="No users match"
           emptyDescription="Create an account below, or clear the search."
+          toolbar={() => (
+            // The button above exports what is on screen. These hit the server
+            // so the register is complete and the download is audited.
+            <div className="flex flex-wrap items-center gap-2 border-b border-border px-6 pb-4">
+              <span className="text-xs text-muted">
+                Full register — every user, not just this page:
+              </span>
+              <DownloadLink href="/api/admin/users/export?format=csv" icon="database" label="Complete CSV" />
+              <DownloadLink href="/api/admin/users/export?format=pdf" icon="picture_as_pdf" label="PDF" />
+            </div>
+          )}
         />
       </div>
 
@@ -431,5 +442,24 @@ export function UsersClient({
         </Card>
       </div>
     </div>
+  )
+}
+
+/**
+ * A file download has to be a real browser navigation — routing it through
+ * next/link would make React try to render the CSV response as a page. Hence a
+ * plain anchor, wrapped once here so the lint exemption has exactly one home.
+ */
+// eslint-disable-next-line @next/next/no-html-link-for-pages
+function DownloadLink({ href, icon, label }: { href: string; icon: string; label: string }) {
+  return (
+    <a
+      href={href}
+      download
+      className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border-strong bg-surface px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+    >
+      <span className="material-symbols-outlined text-[16px] leading-none">{icon}</span>
+      {label}
+    </a>
   )
 }

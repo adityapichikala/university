@@ -1,6 +1,9 @@
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { prisma } from '@/lib/db'
 import { requireUser } from '@/lib/rbac'
 import { ROLE_LABEL, SLUG_ROLE } from '@/lib/roles'
+import { weekdayLabel, timeRange } from '@/lib/timetable'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 /**
@@ -26,6 +29,27 @@ export default async function RoleDashboardPage({
   const firstName = ctx.user.name.split(' ')[0]
   const permissions = Array.from(ctx.permissions).sort()
 
+  // Students get a glanceable "what's on today" strip. It is deliberately a
+  // preview (max three entries) — the full week lives on the timetable page.
+  const today = new Date()
+  const todaySlots =
+    role === 'STUDENT' && ctx.user.classId
+      ? await prisma.timetableSlot.findMany({
+          where: { classId: ctx.user.classId, dayOfWeek: today.getDay() },
+          select: {
+            id: true,
+            startTime: true,
+            endTime: true,
+            room: true,
+            course: {
+              select: { code: true, name: true, teacher: { select: { name: true } } },
+            },
+          },
+          orderBy: { startTime: 'asc' },
+        })
+      : []
+  const previewSlots = todaySlots.slice(0, 3)
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
@@ -37,6 +61,56 @@ export default async function RoleDashboardPage({
           {ROLE_LABEL[role]}
         </p>
       </div>
+
+      {role === 'STUDENT' ? (
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Today&rsquo;s classes</CardTitle>
+                <p className="text-sm text-muted">
+                  {weekdayLabel(today.getDay())}
+                  {todaySlots.length > previewSlots.length
+                    ? ` · showing ${previewSlots.length} of ${todaySlots.length}`
+                    : ` · ${todaySlots.length} scheduled`}
+                </p>
+              </div>
+              <Link
+                href="/dashboard/student/timetable"
+                className="shrink-0 text-xs font-medium text-accent hover:underline"
+              >
+                Full timetable
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {todaySlots.length === 0 ? (
+              <p className="text-sm text-subtle">
+                Nothing scheduled today — enjoy the breathing room.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {previewSlots.map((slot) => (
+                  <li key={slot.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        <span className="num text-accent">{slot.course.code}</span>{' '}
+                        <span className="text-muted">{slot.course.name}</span>
+                      </p>
+                      <p className="mt-0.5 text-xs text-subtle">
+                        {slot.course.teacher?.name ?? 'Unassigned'} · {slot.room}
+                      </p>
+                    </div>
+                    <span className="num shrink-0 rounded-lg bg-background px-2 py-1 text-xs text-muted">
+                      {timeRange(slot.startTime, slot.endTime)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-3">
         {[

@@ -3,6 +3,7 @@ import { requireUser, scopes } from '@/lib/rbac'
 import { CREDITED_STATUSES, type AttendanceStatus } from '@/lib/academics'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { sectionUnlocked } from '@/lib/permissions'
+import { cn } from '@/lib/utils'
 
 export const metadata = { title: 'My Attendance · Apex University ERP' }
 
@@ -26,10 +27,24 @@ export default async function StudentAttendancePage() {
       ...scopes.own(ctx),
       course: { ...sectionUnlocked(enrollment?.classId) },
     },
-    select: { id: true, courseId: true, status: true, course: { select: { code: true, name: true } } },
+    select: {
+      id: true,
+      courseId: true,
+      status: true,
+      date: true,
+      course: { select: { code: true, name: true } },
+    },
+    orderBy: { date: 'desc' },
   })
 
-  type Summary = { code: string; name: string; total: number; credited: number }
+  type Session = { date: string; status: string; credited: boolean }
+  type Summary = {
+    code: string
+    name: string
+    total: number
+    credited: number
+    sessions: Session[]
+  }
   const byCourse = new Map<string, Summary>()
   for (const row of rows) {
     const entry =
@@ -40,12 +55,21 @@ export default async function StudentAttendancePage() {
           name: row.course.name,
           total: 0,
           credited: 0,
+          sessions: [],
         }
         byCourse.set(row.courseId, fresh)
         return fresh
       })()
     entry.total += 1
-    if (CREDITED_STATUSES.includes(row.status as AttendanceStatus)) entry.credited += 1
+    const credited = CREDITED_STATUSES.includes(row.status as AttendanceStatus)
+    if (credited) entry.credited += 1
+    // Every session is kept, not just the tally — the student needs to see
+    // *which* classes they were marked absent for, per course.
+    entry.sessions.push({
+      date: row.date.toISOString().slice(0, 10),
+      status: row.status,
+      credited,
+    })
   }
 
   const summaries = [...byCourse.values()].sort((a, b) => a.code.localeCompare(b.code))
@@ -60,7 +84,8 @@ export default async function StudentAttendancePage() {
           My Attendance
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Present and late sessions count toward your percentage.
+          Present and late sessions count toward your percentage. Whatever your teacher marks in
+          their portal appears here — including absences. Open a course to see each session.
         </p>
       </div>
 
@@ -125,6 +150,35 @@ export default async function StudentAttendancePage() {
                         style={{ width: `${pct}%` }}
                       />
                     </div>
+
+                    {/* Per-course drill-down. <details> keeps this server-rendered
+                        and keyboard accessible with no client component. */}
+                    <details className="group mt-3">
+                      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:border-accent hover:text-accent">
+                        <span className="material-symbols-outlined text-[16px] leading-none">
+                          expand_more
+                        </span>
+                        Which classes
+                      </summary>
+                      <ul className="mt-2 divide-y divide-border">
+                        {c.sessions.map((s, i) => (
+                          <li
+                            key={`${s.date}-${i}`}
+                            className="flex items-center justify-between gap-3 py-1.5 text-xs"
+                          >
+                            <span className="num text-muted">{s.date}</span>
+                            <span
+                              className={cn(
+                                'rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider',
+                                s.credited ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'
+                              )}
+                            >
+                              {s.status.toLowerCase()}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   </CardContent>
                 </Card>
               )

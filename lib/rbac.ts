@@ -26,6 +26,10 @@ export interface DbUser {
   role: string
   collegeId: string | null
   departmentId: string | null
+  /** Student's home section — scope for their roll number. */
+  classId: string | null
+  /** Roll number within that section. Null for staff. */
+  rollNo: string | null
   status: string
 }
 
@@ -73,6 +77,8 @@ async function loadUser(userId: string): Promise<DbUser | null> {
       role: true,
       collegeId: true,
       departmentId: true,
+      classId: true,
+      rollNo: true,
       status: true,
     },
   })

@@ -32,13 +32,24 @@ export default async function TeacherAttendancePage({
   const day = new Date(`${dateKey}T00:00:00.000Z`)
 
   // Roster = everyone enrolled in the selected course (and only that course).
+  // Roll number and section come along so the teacher can identify a student
+  // the way the section does, not just by regno — two sections both have a
+  // roll 01, so the pair is only meaningful together.
   const roster = selectedCourseId
     ? await prisma.courseEnrollment.findMany({
         where: { courseId: selectedCourseId, ...scopes.college(ctx) },
         select: {
-          student: { select: { id: true, regno: true, name: true } },
+          student: {
+            select: {
+              id: true,
+              regno: true,
+              name: true,
+              rollNo: true,
+              class: { select: { id: true, name: true } },
+            },
+          },
         },
-        orderBy: { student: { regno: 'asc' } },
+        orderBy: [{ student: { class: { name: 'asc' } } }, { student: { rollNo: 'asc' } }],
       })
     : []
 
@@ -72,7 +83,13 @@ export default async function TeacherAttendancePage({
           courses={courses}
           initialCourseId={selectedCourseId}
           initialDate={dateKey}
-          roster={roster.map((r) => r.student)}
+          roster={roster.map((r) => ({
+            id: r.student.id,
+            regno: r.student.regno,
+            name: r.student.name,
+            rollNo: r.student.rollNo,
+            section: r.student.class?.name ?? null,
+          }))}
           initialMarks={existing.map((e) => ({
             studentId: e.studentId,
             status: e.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
