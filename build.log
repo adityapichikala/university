@@ -1,0 +1,11 @@
+▲ Next.js 16.3.4 (Turbopack)
+- Environments: .env
+✓ Running next.config.ts took 42ms
+
+> Build error occurred
+Error: [safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] {"count":1506,"threshold":50,"scope":"turn","targets":["C:\\Users\\adity\\OneDrive\\Desktop\\unniversity\\.next\\_events_32116.json"],"targetCount":1}
+    at checkBulkDeleteGuard (D:\workbuddy ai\WorkBuddyAI\resources\app.asar.unpacked\cli\vendor\shim\node-safe-delete-shim.cjs:214:19)
+    at tryTrash (D:\workbuddy ai\WorkBuddyAI\resources\app.asar.unpacked\cli\vendor\shim\node-safe-delete-shim.cjs:566:5)
+    at Object.unlinkSync (D:\workbuddy ai\WorkBuddyAI\resources\app.asar.unpacked\cli\vendor\shim\node-safe-delete-shim.cjs:634:9)
+BUILD_EXIT=1
+BUILD_EXIT=1
