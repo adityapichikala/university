@@ -47,9 +47,11 @@ interface ExamRow {
  *
  * The query window is the month currently in view plus its lead/trail days —
  * but the client owns the anchor date, so the server cannot know it. Instead
- * the window is "this month ± one": wide enough that paging a month either way
- * and switching to week/day view is already covered, and narrow enough that a
- * four-year placement calendar never arrives in one payload.
+ * the window is generously "this month ± three": wide enough that paging a few
+ * months either way and switching to week/day view is already covered, and
+ * narrow enough that a four-year placement calendar never arrives in one
+ * payload. Paging past the window shows an empty grid rather than a wrong one
+ * — the events are simply not in the payload.
  */
 export default async function StudentCalendarPage() {
   const ctx = await requireUser({ route: 'student' })
@@ -60,8 +62,8 @@ export default async function StudentCalendarPage() {
     select: { classId: true, class: { select: { id: true, name: true } } },
   })
 
-  const windowStart = startOfMonthUtc(addMonths(today, -1))
-  const windowEnd = addDays(startOfMonthUtc(addMonths(today, 2)), -1)
+  const windowStart = startOfMonthUtc(addMonths(today, -3))
+  const windowEnd = addDays(startOfMonthUtc(addMonths(today, 3)), -1)
 
   // A course is college-wide, not per-section — a student sits exams for the
   // courses they are enrolled in. Resolve those ids once and reuse them, so an
@@ -146,8 +148,8 @@ export default async function StudentCalendarPage() {
       .map((d) => dateKey(d.date))
   )
 
-  const firstCell = monthMatrix(addMonths(today, -1))[0]
-  const lastCell = monthMatrix(addMonths(today, 2))[41]
+  const firstCell = monthMatrix(addMonths(today, -3))[0]
+  const lastCell = monthMatrix(addMonths(today, 3))[41]
 
   for (let date = firstCell; date <= lastCell; date = addDays(date, 1)) {
     const key = dateKey(date)

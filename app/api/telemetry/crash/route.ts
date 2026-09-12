@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
-import { crashReference, recordCrash } from '@/lib/audit-log'
+import { crashReference } from '@/lib/crash-describe'
+import { recordCrash } from '@/lib/crash-record'
 
 /**
  * POST /api/telemetry/crash — client crash sink.

@@ -209,8 +209,8 @@ function MonthView({
   eventsOn: (date: Date) => CalendarEvent[]
   onPickDay: (date: Date) => void
 }) {
-  // Render the 8-column layout as 7: Mon–Sat plus a trailing "more" slot is
-  // not needed, so the grid is Mon–Sun minus Sunday, which never has classes.
+  // Sunday is dropped: the schema's teaching week is Mon–Sat, so the seventh
+  // column would always be empty and would eat a seventh of a phone's width.
   const columns = monthViewDays() // Mon…Sat
   const cells = monthMatrix(anchor).filter((d) => d.getUTCDay() !== 0)
   const month = startOfMonthUtc(anchor).getUTCMonth()

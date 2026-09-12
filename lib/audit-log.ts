@@ -213,59 +213,16 @@ export function parseAuditDayEnd(value?: string | null): Date | null {
 
 // ── Crash reporting ─────────────────────────────────────────────────────────
 
-// `describeError` and `crashReference` live in `lib/crash-describe.ts` — their
-// own dependency-free module — because the client error boundary has to import
-// them and this file pulls in Prisma.
+/**
+ * The read half of crash reporting only.
+ *
+ * `recordCrash()` writes an AgentActionLog, which means importing `lib/audit`
+ * and `next/headers` — neither of which may reach a client bundle. Since this
+ * module *is* imported by client components (the audit filter bar reads
+ * `AUDIT_STATUSES`), the write path lives in `lib/crash-record.ts`, which is
+ * server-only by construction.
+ *
+ * `describeError` / `crashReference` are pure and stay client-safe here.
+ */
 export { describeError, crashReference } from './crash-describe'
 export type { DescribedError } from './crash-describe'
-
-/**
- * A crash, as persisted to the audit trail.
- */
-export interface CrashReport {
-  /** Where the crash happened, e.g. "global-error" or "app/dashboard". */
-  source: string
-  message: string
-  /** First frames of the stack, trimmed — a stack is the useful part, and it
-   *  is the part most likely to be enormous. */
-  stack?: string
-  digest?: string
-  /** Route or URL the user was on, when known. */
-  path?: string
-  /** Server-generated id, so a user quoting it can be matched to this row. */
-  reference: string
-}
-
-import { describeError } from './crash-describe'
-
-export async function recordCrash(report: CrashReport): Promise<boolean> {
-  try {
-    const { audit } = await import('./audit')
-    await audit({
-      // No ctx: a global error boundary can fire before authentication, and a
-      // crash log should not claim an actor we cannot verify. `ip: null` is
-      // explicit so `audit()` skips the `headers()` call — unavailable from a
-      // client-side boundary.
-      agentName: 'system',
-      actionType: 'SYSTEM_CRASH',
-      targetEntity: report.source,
-      entityId: report.reference,
-      status: 'FAILED',
-      ip: null,
-      collegeId: null,
-      after: {
-        reference: report.reference,
-        message: report.message,
-        digest: report.digest ?? null,
-        path: report.path ?? null,
-        stack: report.stack ?? null,
-      },
-    })
-    return true
-  } catch (error) {
-    // Stderr is the last resort — a log aggregator still sees it even when the
-    // database (and therefore the chain) is the thing that is down.
-    console.error(`[crash ${report.reference}] ${report.source}: ${report.message}`, error)
-    return false
-  }
-}
