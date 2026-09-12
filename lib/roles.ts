@@ -105,6 +105,41 @@ export const PERMISSIONS = {
   HOSTEL_MANAGE: 'hostel.manage',
   /** Student: see their own room allocation. */
   HOSTEL_VIEW_OWN: 'hostel.view_own',
+
+  // ── Phase 4 — Broadcast announcements (doc §7 Phase 4) ──────────────────
+  /** Post a notice under the college's name, scoped by role/dept/class/user. */
+  ANNOUNCEMENT_BROADCAST: 'announcement.broadcast',
+
+  // ── Phase 4 — Staff portals (doc §7 Phase 4 / Wave 4) ───────────────────
+  /** HR: maintain the employee register (designation, band, joining date). */
+  EMPLOYEE_MANAGE: 'employee.manage',
+  /**
+   * HR: decide leave requests. Kept separate from EMPLOYEE_MANAGE so a clerk
+   * can maintain records without being able to approve time off.
+   */
+  LEAVE_APPROVE: 'leave.approve',
+  /** Any staff member: file a leave request for themselves. */
+  LEAVE_REQUEST: 'leave.request',
+  /** Placement officer: run drives and move applications through the pipeline. */
+  PLACEMENT_MANAGE: 'placement.manage',
+  /** Student: apply to a placement drive. */
+  PLACEMENT_APPLY: 'placement.apply',
+  /** Registrar: issue certificates (bonafide, transcript, degree). */
+  CERTIFICATE_ISSUE: 'certificate.issue',
+  /** Parent: read-only view of their own child's academic record. */
+  PARENT_VIEW_CHILD: 'parent.view_child',
+  /** HOD: see everything in their own department. */
+  DEPARTMENT_VIEW: 'department.view',
+
+  // ── Departments & Admissions (doc §7 — closing the last admin gaps) ─────
+  /**
+   * Admin: create/rename departments and appoint a HOD.
+   * Deliberately separate from DEPARTMENT_VIEW (read-only, held by HOD) —
+   * being able to see a department does not mean you may restructure it.
+   */
+  DEPARTMENT_MANAGE: 'department.manage',
+  /** Admin: decide admission applications and convert them into students. */
+  ADMISSION_MANAGE: 'admission.manage',
 } as const
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
@@ -119,6 +154,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, string[]> = {
     PERMISSIONS.FEE_VIEW_OWN,
     PERMISSIONS.LIBRARY_BORROW,
     PERMISSIONS.HOSTEL_VIEW_OWN,
+    PERMISSIONS.PLACEMENT_APPLY,
   ],
   TEACHER: [
     PERMISSIONS.GRADE_ENTRY,
@@ -126,6 +162,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, string[]> = {
     PERMISSIONS.EXAM_CREATE,
     PERMISSIONS.ASSIGNMENT_MANAGE,
     PERMISSIONS.TIMETABLE_MANAGE,
+    PERMISSIONS.ANNOUNCEMENT_BROADCAST,
+    PERMISSIONS.LEAVE_REQUEST,
+    PERMISSIONS.DEPARTMENT_VIEW,
   ],
   HOD: [
     PERMISSIONS.GRADE_ENTRY,
@@ -134,6 +173,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, string[]> = {
     PERMISSIONS.COURSE_MANAGE,
     PERMISSIONS.ASSIGNMENT_MANAGE,
     PERMISSIONS.TIMETABLE_MANAGE,
+    PERMISSIONS.ANNOUNCEMENT_BROADCAST,
+    PERMISSIONS.LEAVE_REQUEST,
+    PERMISSIONS.LEAVE_APPROVE,
+    PERMISSIONS.DEPARTMENT_VIEW,
   ],
   ADMIN: Object.values(PERMISSIONS),
   REGISTRAR: [
@@ -142,12 +185,14 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, string[]> = {
     PERMISSIONS.CLASS_MANAGE,
     PERMISSIONS.ENROLLMENT_MANAGE,
     PERMISSIONS.ASSIGNMENT_MANAGE,
+    PERMISSIONS.CERTIFICATE_ISSUE,
+    PERMISSIONS.LEAVE_REQUEST,
     PERMISSIONS.TIMETABLE_MANAGE,
   ],
-  FINANCE: [PERMISSIONS.FEE_MANAGE],
-  LIBRARIAN: [PERMISSIONS.LIBRARY_MANAGE, PERMISSIONS.LIBRARY_BORROW],
-  WARDEN: [PERMISSIONS.HOSTEL_MANAGE],
-  HR: [],
-  PLACEMENT: [],
-  PARENT: [],
+  FINANCE: [PERMISSIONS.FEE_MANAGE, PERMISSIONS.LEAVE_REQUEST],
+  LIBRARIAN: [PERMISSIONS.LIBRARY_MANAGE, PERMISSIONS.LIBRARY_BORROW, PERMISSIONS.LEAVE_REQUEST],
+  WARDEN: [PERMISSIONS.HOSTEL_MANAGE, PERMISSIONS.LEAVE_REQUEST],
+  HR: [PERMISSIONS.EMPLOYEE_MANAGE, PERMISSIONS.LEAVE_APPROVE, PERMISSIONS.LEAVE_REQUEST],
+  PLACEMENT: [PERMISSIONS.PLACEMENT_MANAGE, PERMISSIONS.LEAVE_REQUEST],
+  PARENT: [PERMISSIONS.PARENT_VIEW_CHILD],
 }

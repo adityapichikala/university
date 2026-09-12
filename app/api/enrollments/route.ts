@@ -4,6 +4,12 @@ import { prisma } from '@/lib/db'
 import { authorize, authorizePermission, scopes, type AuthContext } from '@/lib/rbac'
 import { audit } from '@/lib/audit'
 import { PERMISSIONS } from '@/lib/roles'
+import {
+  createEnrollment,
+  enrollmentSelect,
+  type EnrollFailure,
+  type EnrollResult,
+} from '@/lib/enrollment'
 
 /**
  * Tier 3 — who sees which enrollments:
@@ -18,16 +24,6 @@ function readScope(ctx: AuthContext) {
   }
   return { ...scopes.college(ctx), ...scopes.own(ctx) }
 }
-
-const enrollmentSelect = {
-  id: true,
-  studentId: true,
-  courseId: true,
-  classId: true,
-  student: { select: { id: true, regno: true, name: true } },
-  course: { select: { id: true, code: true, name: true, credits: true } },
-  class: { select: { id: true, name: true } },
-} as const
 
 export async function GET(req: NextRequest) {
   const result = await authorize(req)
@@ -58,7 +54,26 @@ const createEnrollmentSchema = z.object({
   studentId: z.string().min(1),
   courseId: z.string().min(1),
   classId: z.string().min(1),
+  /** Set when the student accepts a place on the queue of a full section. */
+  joinWaitlist: z.boolean().optional(),
 })
+
+/**
+ * HTTP status per refusal. Everything the caller can act on is a 409 so the
+ * client can tell "try something different" from "you are not allowed":
+ *   DUPLICATE / CREDIT_CAP / SLOT_CLASH / SECTION_FULL → 409 + `reason`
+ *   STUDENT_NOT_FOUND / NOT_A_STUDENT / …              → 400 (bad input)
+ */
+const FAILURE_STATUS: Record<EnrollFailure['kind'], number> = {
+  STUDENT_NOT_FOUND: 400,
+  NOT_A_STUDENT: 400,
+  COURSE_NOT_FOUND: 400,
+  CLASS_NOT_FOUND: 400,
+  DUPLICATE: 409,
+  CREDIT_CAP: 409,
+  SLOT_CLASH: 409,
+  SECTION_FULL: 409,
+}
 
 export async function POST(req: NextRequest) {
   const result = await authorizePermission(req, PERMISSIONS.ENROLLMENT_MANAGE)
@@ -73,57 +88,72 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request payload' }, { status: 400 })
   }
 
-  const { studentId, courseId, classId } = parsed.data
-
-  // Every FK must resolve inside the caller's college.
-  const [student, course, klass] = await Promise.all([
-    prisma.user.findFirst({
-      where: { id: studentId, collegeId },
-      select: { id: true, regno: true, role: true },
-    }),
-    prisma.course.findFirst({ where: { id: courseId, collegeId }, select: { id: true, code: true } }),
-    prisma.class.findFirst({ where: { id: classId, collegeId }, select: { id: true, name: true } }),
-  ])
-
-  if (!student) return NextResponse.json({ error: 'Student not found in your college' }, { status: 400 })
-  if (student.role !== 'STUDENT') {
-    return NextResponse.json({ error: 'That user is not a student' }, { status: 400 })
-  }
-  if (!course) return NextResponse.json({ error: 'Course not found in your college' }, { status: 400 })
-  if (!klass) return NextResponse.json({ error: 'Class not found in your college' }, { status: 400 })
-
-  const existing = await prisma.courseEnrollment.findUnique({
-    where: { studentId_courseId: { studentId, courseId } },
-    select: { id: true },
+  // All of the rule-checking (credits, seats, clashes) happens inside this
+  // call, in one transaction — see lib/enrollment.ts.
+  const outcome: EnrollResult = await createEnrollment(prisma, collegeId, {
+    studentId: parsed.data.studentId,
+    courseId: parsed.data.courseId,
+    classId: parsed.data.classId,
+    joinWaitlist: parsed.data.joinWaitlist,
   })
-  if (existing) {
+
+  if (!outcome.ok) {
+    const { failure } = outcome
     await audit({
       ctx,
       agentName: 'academics',
       actionType: 'ENROLLMENT_CREATE',
       targetEntity: 'CourseEnrollment',
       status: 'REJECTED',
-      after: { regno: student.regno, course: course.code, reason: 'already enrolled' },
+      after: { reason: failure.kind, message: failure.message },
     })
+
     return NextResponse.json(
-      { error: `${student.regno} is already enrolled in ${course.code}` },
-      { status: 409 }
+      {
+        error: failure.message,
+        reason: failure.kind,
+        // Extra fields the UI needs to offer a next step rather than a dead end.
+        ...(failure.kind === 'SECTION_FULL' ? { seats: failure.seats, canWaitlist: true } : {}),
+        ...(failure.kind === 'SLOT_CLASH' ? { conflicts: failure.conflicts } : {}),
+        ...(failure.kind === 'CREDIT_CAP'
+          ? {
+              currentCredits: failure.currentCredits,
+              courseCredits: failure.courseCredits,
+              limit: failure.limit,
+            }
+          : {}),
+        ...(failure.kind === 'DUPLICATE' ? { status: failure.status } : {}),
+      },
+      { status: FAILURE_STATUS[failure.kind] }
     )
   }
 
-  const enrollment = await prisma.courseEnrollment.create({
-    data: { collegeId, studentId, courseId, classId },
-    select: enrollmentSelect,
-  })
+  const { enrollment, waitlisted, waitlistPosition, seats } = outcome
 
   await audit({
     ctx,
     agentName: 'academics',
-    actionType: 'ENROLLMENT_CREATE',
+    actionType: waitlisted ? 'ENROLLMENT_WAITLIST' : 'ENROLLMENT_CREATE',
     targetEntity: 'CourseEnrollment',
     entityId: enrollment.id,
-    after: { regno: student.regno, course: course.code, class: klass.name },
+    after: {
+      regno: enrollment.student.regno,
+      course: enrollment.course.code,
+      class: enrollment.class.name,
+      ...(waitlisted ? { waitlistPosition } : {}),
+    },
   })
 
-  return NextResponse.json({ enrollment }, { status: 201 })
+  return NextResponse.json(
+    {
+      enrollment,
+      waitlisted,
+      waitlistPosition,
+      seats,
+      message: waitlisted
+        ? `${enrollment.student.regno} is #${waitlistPosition} on the waitlist for ${enrollment.course.code}`
+        : `${enrollment.student.regno} enrolled in ${enrollment.course.code}`,
+    },
+    { status: 201 }
+  )
 }

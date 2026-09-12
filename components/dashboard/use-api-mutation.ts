@@ -18,6 +18,8 @@ export type MutationMethod = 'POST' | 'PATCH' | 'DELETE'
 export interface ApiError {
   message: string
   status: number
+  /** Machine-readable cause, e.g. "DUPLICATE" or "SECTION_FULL". */
+  reason?: string
   /** Present on 409 conflict responses, e.g. timetable clashes. */
   conflicts?: unknown
 }
@@ -27,12 +29,32 @@ interface Options {
   onSuccess?: () => void
   /** Override the default success toast title. */
   successTitle?: string
+  /**
+   * Called on a 409 with the parsed error, before any toast. Use it to offer
+   * a next step — "section is full, join the waitlist?" — instead of leaving
+   * the user at a dead end.
+   */
+  onConflict?: (conflict: ApiError) => void
+  /**
+   * Return true to treat this 409 as success.
+   *
+   * For idempotent actions like "enrol this student", one particular conflict
+   * means the desired state already holds — a duplicate enrollment — so a
+   * second click should read as confirmation. Other conflicts (over the credit
+   * cap, a timetable clash) are real refusals and must stay errors, which is
+   * why this is a predicate on the reason rather than a flat boolean.
+   */
+  conflictAsSuccess?: (conflict: ApiError) => boolean
+  /** Toast title used for 409s. */
+  conflictTitle?: string
 }
 
 export function useApiMutation() {
   const router = useRouter()
   const { success, error } = useToast()
   const [pending, setPending] = React.useState(false)
+  /** The most recent 409, so a screen can render a follow-up affordance. */
+  const [conflict, setConflict] = React.useState<ApiError | null>(null)
 
   const run = React.useCallback(
     async (
@@ -42,6 +64,7 @@ export function useApiMutation() {
       options: Options = {}
     ): Promise<boolean> => {
       setPending(true)
+      setConflict(null)
       try {
         const res = await fetch(url, {
           method,
@@ -54,6 +77,30 @@ export function useApiMutation() {
         if (!res.ok) {
           const message =
             (payload as { error?: string }).error ?? `Request failed (${res.status})`
+          const apiError: ApiError = {
+            message,
+            status: res.status,
+            reason: (payload as { reason?: string }).reason,
+            conflicts: (payload as { conflicts?: unknown }).conflicts,
+          }
+
+          // 409 is "this is already the case" or "there is another way in",
+          // not "something broke" — so it gets its own path.
+          if (res.status === 409) {
+            setConflict(apiError)
+            options.onConflict?.(apiError)
+
+            if (options.conflictAsSuccess?.(apiError)) {
+              router.refresh()
+              success(options.conflictTitle ?? 'Already done', message)
+              options.onSuccess?.()
+              return true
+            }
+
+            error(options.conflictTitle ?? 'Conflict', message)
+            return false
+          }
+
           error(options.successTitle ?? 'Action failed', message)
           return false
         }
@@ -74,5 +121,5 @@ export function useApiMutation() {
     [router, success, error]
   )
 
-  return { run, pending }
+  return { run, pending, conflict, clearConflict: () => setConflict(null) }
 }

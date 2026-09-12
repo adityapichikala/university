@@ -10,6 +10,17 @@ const AUTH_ONLY = /^\/login$/
 const ROLE_SEGMENT = /^\/dashboard\/([^/]+)/
 
 /**
+ * Dashboard routes shared by every role, not owned by one.
+ *
+ * `/dashboard/leave` is staff self-service: it is gated on the `leave.request`
+ * *permission*, not on a role, so role-route isolation must not apply to it.
+ * Skipping the redirect here is safe — proxy is only a fast first pass; the
+ * authoritative check is `requirePermission()` inside the page, which runs
+ * against a fresh DB row and redirects anyone without the permission.
+ */
+const SHARED_SEGMENTS = new Set(['leave'])
+
+/**
  * Edge-safe session guard (architecture doc §5, step 1).
  * Next 16 renamed the `middleware` convention to `proxy` — same behaviour.
  *
@@ -40,9 +51,9 @@ export default async function proxy(req: NextRequest) {
     return NextResponse.redirect(new URL(own, req.url))
   }
 
-  // 3 ── role-route isolation
+  // 3 ── role-route isolation (shared routes exempt, see SHARED_SEGMENTS)
   const match = pathname.match(ROLE_SEGMENT)
-  if (match && match[1] !== roleSlug(session.role)) {
+  if (match && !SHARED_SEGMENTS.has(match[1]) && match[1] !== roleSlug(session.role)) {
     return NextResponse.redirect(new URL(own, req.url))
   }
 

@@ -63,6 +63,7 @@ model College {
   placementApplications PlacementApplication[]
   notifications      Notification[]
   certificates       Certificate[]
+  parentLinks        ParentChild[]
   agentActionLogs    AgentActionLog[]
 }
 
@@ -124,8 +125,13 @@ model User {
   // Employee
   employee              Employee?
 
+  // Family: who this parent may view, and who may view this student
+  children              ParentChild[] @relation("ParentLinks")
+  guardians             ParentChild[] @relation("ChildLinks")
+
   // Admin
   notificationsCreated  Notification[]
+  announcementTargets   NotificationTarget[]
   agentActionsApproved  AgentActionLog[]
   admissionsConverted   Admission[]      @relation("AdmissionConvertedBy")
 
@@ -210,6 +216,10 @@ model Course {
   departmentId String
   credits      Int      @default(3)
   teacherId    String?
+  /// Seat cap for one section of this course (a section is a course + class
+  /// pair). Checked inside the enrollment transaction, so two concurrent
+  /// enrolments cannot both take the last seat. 0 means "no cap".
+  capacity     Int      @default(60)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -235,6 +245,11 @@ model CourseEnrollment {
   studentId String
   courseId  String
   classId   String
+  /// CONFIRMED takes a seat and counts toward the credit cap and timetable
+  /// clash checks. WAITLISTED does neither — it only holds a queue position
+  /// until a seat frees up. SQLite has no enums, so lib/enrollment.ts owns
+  /// the vocabulary (same arrangement as lib/roles.ts).
+  status    String   @default("CONFIRMED")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -243,8 +258,12 @@ model CourseEnrollment {
   course  Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
 
+  /// One row per student per course — a waitlist entry is the same row with
+  /// status WAITLISTED, so a student can never hold both a seat and a place
+  /// in the queue for the same course.
   @@unique([studentId, courseId])
   @@index([collegeId])
+  @@index([status])
 }
 
 // Section-level access control (Tier 3, resource scoping).
@@ -664,6 +683,13 @@ model Notification {
   collegeId          String?
   title              String
   body               String
+  // LOW | NORMAL | URGENT — SQLite has no enum, so lib/announcements.ts is the
+  // source of truth (ANNOUNCEMENT_PRIORITIES / isAnnouncementPriority).
+  priority           String   @default("NORMAL")
+  // After this instant the notice is no longer served to anyone. Null = never
+  // expires. Expiry is checked on read, so a notice that lapses while a tab is
+  // open disappears on the next fetch rather than needing a cron job.
+  expiresAt          DateTime?
   targetRole         String?  // null = all roles
   targetDepartmentId String?
   targetClassId      String?
@@ -676,6 +702,7 @@ model Notification {
   targetDepartment  Department?         @relation(fields: [targetDepartmentId], references: [id])
   targetClass       Class?              @relation(fields: [targetClassId], references: [id])
   reads             NotificationRead[]
+  targets           NotificationTarget[]
 
   @@index([collegeId])
   @@index([targetRole])
@@ -690,6 +717,44 @@ model NotificationRead {
   notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
 
   @@unique([notificationId, userId])
+}
+
+// Role / department / class targeting is a *predicate* — it matches whoever
+// fits today. Naming an individual is a *fact*. This join stores the fact, so
+// an announcement can reach one specific person without inventing a role for
+// them, and the audience survives later changes to their role or section.
+model NotificationTarget {
+  id             String   @id @default(cuid())
+  notificationId String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId])
+}
+
+// ─── Family links (parent portal) ───────────────────────────────────────────
+// A parent is a real User, but "which child is yours" is a fact, not a role.
+// Modelling it as a join — rather than matching surnames or stuffing an id on
+// User — means two parents can both see one student, and one parent can see
+// two children, without inventing a role for either case.
+model ParentChild {
+  id        String   @id @default(cuid())
+  collegeId String
+  parentId  String
+  studentId String
+  relation  String   @default("GUARDIAN")
+  createdAt DateTime @default(now())
+
+  college College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  parent  User    @relation("ParentLinks", fields: [parentId], references: [id], onDelete: Cascade)
+  student User    @relation("ChildLinks", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([parentId, studentId])
+  @@index([studentId])
 }
 
 // ─── Certificates ───────────────────────────────────────────────────────────
@@ -731,7 +796,11 @@ model AgentActionLog {
   updatedAt        DateTime @updatedAt
 
   college    College? @relation(fields: [collegeId], references: [id], onDelete: Cascade)
-  approvedBy User?    @relation(fields: [approvedByUserId], references: [id])
+  /// Restrict, not the implicit SetNull: approvedByUserId is one of the fields
+  /// the row's hash is computed over, so nulling it on user deletion rewrote
+  /// history and made the whole chain read as tampered with. An audit log has
+  /// to be immutable — deactivate an account (User.status), never remove it.
+  approvedBy User?    @relation(fields: [approvedByUserId], references: [id], onDelete: Restrict)
 
   @@index([collegeId])
   @@index([timestamp])

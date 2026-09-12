@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Dialog } from '@base-ui/react/dialog'
 import { ROLE_LABEL, type Role } from '@/lib/roles'
@@ -18,9 +19,19 @@ interface HeaderProps {
   user: HeaderUser
   sections: NavSection[]
   collegeName?: string | null
+  /** Live unread announcements for this user. 0 renders a plain bell. */
+  unreadCount?: number
+  /** Where the bell points. Omitted for roles without a board page. */
+  notificationsHref?: string
 }
 
-export function Header({ user, sections, collegeName }: HeaderProps) {
+export function Header({
+  user,
+  sections,
+  collegeName,
+  unreadCount = 0,
+  notificationsHref,
+}: HeaderProps) {
   // Mobile Sheet (Base UI Dialog) + account menu state.
   const [sheetOpen, setSheetOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -121,13 +132,31 @@ export function Header({ user, sections, collegeName }: HeaderProps) {
         </span>
       </div>
 
-      <button
-        type="button"
-        aria-label="Notifications"
-        className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl text-muted hover:bg-background hover:text-foreground"
-      >
-        <span className="material-symbols-outlined">notifications</span>
-      </button>
+      {/* Bell → the caller's announcement board. Plain <button> when there is
+          no board to open, so we never render a dead link. */}
+      {notificationsHref ? (
+        <Link
+          href={notificationsHref}
+          aria-label={
+            unreadCount > 0 ? `Announcements — ${unreadCount} unread` : 'Announcements'
+          }
+          className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl text-muted hover:bg-background hover:text-foreground"
+        >
+          <span className="material-symbols-outlined">notifications</span>
+          {unreadCount > 0 ? <UnreadBadge count={unreadCount} /> : null}
+        </Link>
+      ) : (
+        <button
+          type="button"
+          aria-label={
+            unreadCount > 0 ? `Announcements — ${unreadCount} unread` : 'Announcements'
+          }
+          className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl text-muted hover:bg-background hover:text-foreground"
+        >
+          <span className="material-symbols-outlined">notifications</span>
+          {unreadCount > 0 ? <UnreadBadge count={unreadCount} /> : null}
+        </button>
+      )}
 
       <div className="h-6 w-px shrink-0 bg-border" />
 
@@ -189,5 +218,14 @@ export function Header({ user, sections, collegeName }: HeaderProps) {
         )}
       </div>
     </header>
+  )
+}
+
+/** 99+ cap — the badge is a hint, the board is the source of truth. */
+function UnreadBadge({ count }: { count: number }) {
+  return (
+    <span className="num absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[9px] font-bold leading-none text-white">
+      {count > 99 ? '99+' : count}
+    </span>
   )
 }

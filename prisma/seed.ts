@@ -9,6 +9,8 @@ const prisma = new PrismaClient()
 
 const COLLEGE_ID = 'clg_apex'
 const DEPARTMENT_ID = 'dep_cse'
+/** Second department — see the note at its upsert for why it has to exist. */
+const OTHER_DEPARTMENT_ID = 'dep_ecm'
 const DEMO_PASSWORD = 'password123'
 
 /**
@@ -36,7 +38,18 @@ const PERMISSION_DESCRIPTIONS: Partial<Record<string, string>> = {
   [PERMISSIONS.LIBRARY_MANAGE]: 'Manage the library catalog and issue books',
   [PERMISSIONS.LIBRARY_BORROW]: 'Borrow books from the library',
   [PERMISSIONS.HOSTEL_MANAGE]: 'Manage hostel rooms and allocations',
+  [PERMISSIONS.EMPLOYEE_MANAGE]: 'Maintain the employee register',
+  [PERMISSIONS.LEAVE_APPROVE]: 'Approve or reject staff leave requests',
+  [PERMISSIONS.LEAVE_REQUEST]: 'File a leave request for yourself',
+  [PERMISSIONS.PLACEMENT_MANAGE]: 'Run placement drives and move applications through the pipeline',
+  [PERMISSIONS.PLACEMENT_APPLY]: 'Apply to a placement drive',
+  [PERMISSIONS.CERTIFICATE_ISSUE]: 'Issue bonafide, transcript and degree certificates',
+  [PERMISSIONS.PARENT_VIEW_CHILD]: 'View your own child’s attendance, results and fees',
+  [PERMISSIONS.DEPARTMENT_VIEW]: 'See everything in your own department',
   [PERMISSIONS.HOSTEL_VIEW_OWN]: 'Student may view their own room allocation',
+  [PERMISSIONS.ANNOUNCEMENT_BROADCAST]: 'Post announcements scoped by role, department, class or student',
+  [PERMISSIONS.DEPARTMENT_MANAGE]: 'Create and rename departments, and appoint a HOD',
+  [PERMISSIONS.ADMISSION_MANAGE]: 'Decide admission applications and convert them into students',
 }
 
 const PERMISSION_SEED = Object.values(PERMISSIONS).map((key) => ({
@@ -66,6 +79,19 @@ async function main() {
     where: { id: DEPARTMENT_ID },
     update: {},
     create: { id: DEPARTMENT_ID, name: 'Computer Science & Engineering', collegeId: COLLEGE_ID },
+  })
+
+  // A second department. Without one, the HOD's Tier-3 "only my department"
+  // rule has nothing to exclude and can never actually fire — and HR's
+  // headcount panel is a single bar. Both portals need the contrast.
+  await prisma.department.upsert({
+    where: { id: OTHER_DEPARTMENT_ID },
+    update: {},
+    create: {
+      id: OTHER_DEPARTMENT_ID,
+      name: 'Electronics & Communication',
+      collegeId: COLLEGE_ID,
+    },
   })
 
   // ── Tier 2: permissions ────────────────────────────────────────────────────
@@ -259,7 +285,14 @@ async function main() {
   // The privilege matrix and section panel need more than one row each to be
   // worth looking at, and the seeded lock/denial proves the KPI counters and
   // the Tier-3 section filter actually bite.
-  const EXTRA_USERS = [
+  const EXTRA_USERS: {
+    regno: string
+    name: string
+    email: string
+    role: string
+    /** Defaults to the CSE department when omitted. */
+    departmentId?: string
+  }[] = [
     { regno: 'TCH002', name: 'Dr. Arjun Rao', email: 'tch002@apex.edu', role: 'TEACHER' },
     { regno: 'TCH003', name: 'Prof. Meera Iyer', email: 'tch003@apex.edu', role: 'TEACHER' },
     { regno: 'STU002', name: 'Ishita Verma', email: 'stu002@apex.edu', role: 'STUDENT' },
@@ -270,17 +303,47 @@ async function main() {
     { regno: 'FIN001', name: 'Suresh Bhat', email: 'fin001@apex.edu', role: 'FINANCE' },
     { regno: 'LIB001', name: 'Latha Krishnan', email: 'lib001@apex.edu', role: 'LIBRARIAN' },
     { regno: 'WDN001', name: 'Joseph Fernandes', email: 'wdn001@apex.edu', role: 'WARDEN' },
+    // Phase 4 staff portals — one account per remaining role so each portal is
+    // actually reachable with a demo login.
+    { regno: 'HOD001', name: 'Dr. Sunita Nair', email: 'hod001@apex.edu', role: 'HOD' },
+    { regno: 'HR001', name: 'Priya Deshpande', email: 'hr001@apex.edu', role: 'HR' },
+    { regno: 'REG001', name: 'Anil Chatterjee', email: 'reg001@apex.edu', role: 'REGISTRAR' },
+    { regno: 'PLA001', name: 'Vikram Sethi', email: 'pla001@apex.edu', role: 'PLACEMENT' },
+    { regno: 'PAR001', name: 'Mohan Menon', email: 'par001@apex.edu', role: 'PARENT' },
+    // A second department's staff. TCH004 files a leave request that HOD001
+    // (CSE) must be refused on — this is the Tier-3 rule in action.
+    {
+      regno: 'TCH004',
+      name: 'Dr. Meera Iyer',
+      email: 'tch004@apex.edu',
+      role: 'TEACHER',
+      departmentId: OTHER_DEPARTMENT_ID,
+    },
+    {
+      regno: 'HOD002',
+      name: 'Dr. Arjun Rao',
+      email: 'hod002@apex.edu',
+      role: 'HOD',
+      departmentId: OTHER_DEPARTMENT_ID,
+    },
   ]
 
   for (const user of EXTRA_USERS) {
     await prisma.user.upsert({
       where: { regno: user.regno },
-      update: { role: user.role, collegeId: COLLEGE_ID, departmentId: DEPARTMENT_ID },
+      update: {
+        role: user.role,
+        collegeId: COLLEGE_ID,
+        departmentId: user.departmentId ?? DEPARTMENT_ID,
+      },
       create: {
-        ...user,
+        regno: user.regno,
+        name: user.name,
+        email: user.email,
+        role: user.role,
         passwordHash,
         collegeId: COLLEGE_ID,
-        departmentId: DEPARTMENT_ID,
+        departmentId: user.departmentId ?? DEPARTMENT_ID,
         status: 'ACTIVE',
       },
     })
@@ -963,6 +1026,410 @@ async function main() {
         roomId,
         allocatedAt: daysAgo(spec.daysAgo),
         vacatedAt: spec.vacatedAfter === null ? null : daysAgo(spec.vacatedAfter),
+      },
+    })
+  }
+
+  // ── Phase 4: Announcements ────────────────────────────────────────────────
+  // Four notices that between them exercise every branch of the banner:
+  // urgent-and-live, already-lapsed, role-targeted, and named-to-one-person.
+  const broadcaster = await prisma.user.findUnique({
+    where: { regno: 'TCH001' },
+    select: { id: true },
+  })
+  const namedStudent = await prisma.user.findUnique({
+    where: { regno: 'STU003' },
+    select: { id: true },
+  })
+
+  if (broadcaster) {
+    await prisma.notification.deleteMany({ where: { collegeId: COLLEGE_ID } })
+
+    const announcements: {
+      title: string
+      body: string
+      priority: string
+      expiresInDays: number | null
+      targetRole: string | null
+      targetUserIds?: string[]
+    }[] = [
+      {
+        title: 'End-semester examinations begin 24 September',
+        body: 'Hall tickets are now available at the examination office. Report 30 minutes before each paper with your identity card. No electronic devices are permitted inside the hall.',
+        priority: 'URGENT',
+        expiresInDays: 21,
+        targetRole: 'STUDENT',
+      },
+      {
+        title: 'Library closed this weekend for annual stock-taking',
+        body: 'The central library will remain closed on Saturday and Sunday. All due dates falling on those two days are automatically extended by 48 hours — no fine will accrue.',
+        priority: 'NORMAL',
+        expiresInDays: null,
+        targetRole: null,
+      },
+      {
+        title: 'Fee payment portal maintenance window',
+        body: 'The online fee portal will be unavailable between 02:00 and 04:00 next Tuesday while we migrate to the new payment gateway.',
+        priority: 'LOW',
+        expiresInDays: 14,
+        targetRole: null,
+      },
+      {
+        // Lapsed on purpose: proves the banner auto-hides rather than relying
+        // on anyone deleting old rows.
+        title: 'Orientation programme — reporting time changed',
+        body: 'First-year students should report to the main auditorium at 09:00 instead of 10:00.',
+        priority: 'NORMAL',
+        expiresInDays: -2,
+        targetRole: 'STUDENT',
+      },
+      {
+        title: 'Reminder: submit your scholarship renewal form',
+        body: 'Your merit scholarship renewal is pending. Please submit the signed form to the student welfare office before the deadline or the waiver will lapse.',
+        priority: 'URGENT',
+        expiresInDays: 10,
+        targetRole: null,
+        targetUserIds: namedStudent ? [namedStudent.id] : [],
+      },
+    ]
+
+    for (const spec of announcements) {
+      await prisma.notification.create({
+        data: {
+          collegeId: COLLEGE_ID,
+          createdByUserId: broadcaster.id,
+          title: spec.title,
+          body: spec.body,
+          priority: spec.priority,
+          expiresAt:
+            spec.expiresInDays === null
+              ? null
+              : new Date(seedNow.getTime() + spec.expiresInDays * 86_400_000),
+          targetRole: spec.targetRole,
+          createdAt: daysAgo(1),
+          ...(spec.targetUserIds?.length
+            ? { targets: { create: spec.targetUserIds.map((userId) => ({ userId })) } }
+            : {}),
+        },
+      })
+    }
+  }
+
+  // ── Phase 4: Employees ───────────────────────────────────────────────────
+  // Every non-student, non-parent account gets an employee record so the HR
+  // register and the leave workflow have real people to act on.
+  const STAFF_SPECS: {
+    regno: string
+    designation: string
+    salaryBand: string
+    joinedDaysAgo: number
+    departmentId?: string
+  }[] = [
+    { regno: 'TCH001', designation: 'Assistant Professor', salaryBand: 'L6', joinedDaysAgo: 1460 },
+    { regno: 'TCH002', designation: 'Associate Professor', salaryBand: 'L8', joinedDaysAgo: 2190 },
+    { regno: 'TCH003', designation: 'Professor', salaryBand: 'L10', joinedDaysAgo: 3700 },
+    { regno: 'HOD001', designation: 'Head of Department', salaryBand: 'L11', joinedDaysAgo: 4100 },
+    { regno: 'HR001', designation: 'HR Manager', salaryBand: 'L7', joinedDaysAgo: 1100 },
+    { regno: 'REG001', designation: 'Registrar', salaryBand: 'L9', joinedDaysAgo: 2900 },
+    { regno: 'FIN001', designation: 'Finance Officer', salaryBand: 'L6', joinedDaysAgo: 980 },
+    { regno: 'LIB001', designation: 'Chief Librarian', salaryBand: 'L6', joinedDaysAgo: 1500 },
+    { regno: 'WDN001', designation: 'Hostel Warden', salaryBand: 'L5', joinedDaysAgo: 730 },
+    { regno: 'PLA001', designation: 'Placement Officer', salaryBand: 'L7', joinedDaysAgo: 640 },
+    // Electronics & Communication — the department HOD001 does *not* head.
+    {
+      regno: 'TCH004',
+      designation: 'Assistant Professor',
+      salaryBand: 'L6',
+      joinedDaysAgo: 1250,
+      departmentId: OTHER_DEPARTMENT_ID,
+    },
+    {
+      regno: 'HOD002',
+      designation: 'Head of Department',
+      salaryBand: 'L11',
+      joinedDaysAgo: 3300,
+      departmentId: OTHER_DEPARTMENT_ID,
+    },
+  ]
+
+  await prisma.employee.deleteMany({ where: { collegeId: COLLEGE_ID } })
+  const employeeIds = new Map<string, string>()
+
+  for (const spec of STAFF_SPECS) {
+    const user = await prisma.user.findUnique({ where: { regno: spec.regno }, select: { id: true } })
+    if (!user) continue
+    const employee = await prisma.employee.upsert({
+      where: { userId: user.id },
+      update: {
+        designation: spec.designation,
+        salaryBand: spec.salaryBand,
+        departmentId: spec.departmentId ?? DEPARTMENT_ID,
+      },
+      create: {
+        collegeId: COLLEGE_ID,
+        userId: user.id,
+        designation: spec.designation,
+        departmentId: spec.departmentId ?? DEPARTMENT_ID,
+        salaryBand: spec.salaryBand,
+        joinedAt: daysAgo(spec.joinedDaysAgo),
+      },
+    })
+    employeeIds.set(spec.regno, employee.id)
+  }
+
+  // ── Phase 4: Leave requests ──────────────────────────────────────────────
+  await prisma.leaveRequest.deleteMany({ where: { collegeId: COLLEGE_ID } })
+  const LEAVE_SPECS: { regno: string; start: number; end: number; reason: string; status: string }[] = [
+    { regno: 'TCH001', start: -3, end: 2, reason: 'Attending an international conference on distributed systems', status: 'PENDING' },
+    { regno: 'TCH002', start: 5, end: 9, reason: 'Annual leave — family function out of station', status: 'PENDING' },
+    { regno: 'TCH003', start: 14, end: 16, reason: 'Medical appointment and follow-up', status: 'PENDING' },
+    { regno: 'LIB001', start: 1, end: 3, reason: 'Personal work', status: 'APPROVED' },
+    { regno: 'FIN001', start: -20, end: -18, reason: 'Casual leave', status: 'REJECTED' },
+    // Filed by ECM staff. HOD001 (CSE) must be refused on this one even though
+    // they hold leave.approve — that refusal is the Tier-3 department scope.
+    {
+      regno: 'TCH004',
+      start: 2,
+      end: 6,
+      reason: 'Conference travel — presenting a paper at ICEPT',
+      status: 'PENDING',
+    },
+  ]
+
+  for (const spec of LEAVE_SPECS) {
+    const employeeId = employeeIds.get(spec.regno)
+    if (!employeeId) continue
+    await prisma.leaveRequest.create({
+      data: {
+        collegeId: COLLEGE_ID,
+        employeeId,
+        startDate: daysAgo(-spec.start),
+        endDate: daysAgo(-spec.end),
+        reason: spec.reason,
+        status: spec.status,
+        reviewedAt: spec.status === 'PENDING' ? null : daysAgo(Math.max(1, -spec.start + 1)),
+      },
+    })
+  }
+
+  // ── Phase 4: Placement ───────────────────────────────────────────────────
+  await prisma.placementApplication.deleteMany({ where: { collegeId: COLLEGE_ID } })
+  await prisma.placementDrive.deleteMany({ where: { collegeId: COLLEGE_ID } })
+
+  const DRIVE_SPECS: {
+    company: string
+    role: string
+    criteria: string
+    inDays: number
+    package: string
+    applicants: { regno: string; status: string }[]
+  }[] = [
+    {
+      company: 'Northwind Analytics',
+      role: 'Data Engineer',
+      criteria: 'CGPA ≥ 7.0 · no active backlogs',
+      inDays: 12,
+      package: '₹12.5 LPA',
+      applicants: [
+        { regno: 'STU001', status: 'SHORTLISTED' },
+        { regno: 'STU002', status: 'APPLIED' },
+        { regno: 'STU003', status: 'APPLIED' },
+      ],
+    },
+    {
+      company: 'Cobalt Systems',
+      role: 'Software Engineer',
+      criteria: 'CGPA ≥ 6.5 · final year',
+      inDays: 26,
+      package: '₹9.8 LPA',
+      applicants: [
+        { regno: 'STU001', status: 'APPLIED' },
+        { regno: 'STU004', status: 'APPLIED' },
+        { regno: 'STU005', status: 'REJECTED' },
+      ],
+    },
+    {
+      company: 'Meridian Bank',
+      role: 'Technology Analyst',
+      criteria: 'CGPA ≥ 6.0 · all branches',
+      inDays: -8,
+      package: '₹7.2 LPA',
+      applicants: [
+        { regno: 'STU002', status: 'SELECTED' },
+        { regno: 'STU003', status: 'SHORTLISTED' },
+        { regno: 'STU005', status: 'APPLIED' },
+      ],
+    },
+    {
+      // Deliberately left without STU001 so the student portal has a drive
+      // that is both open and actionable — otherwise every Apply path in the
+      // UI is hidden behind an existing application and never gets exercised.
+      company: 'Kestrel Robotics',
+      role: 'Embedded Systems Intern',
+      criteria: 'CGPA ≥ 7.5 · ECE/CSE · 2027 batch',
+      inDays: 34,
+      package: '₹8.4 LPA',
+      applicants: [
+        { regno: 'STU002', status: 'APPLIED' },
+        { regno: 'STU004', status: 'APPLIED' },
+      ],
+    },
+  ]
+
+  for (const spec of DRIVE_SPECS) {
+    const drive = await prisma.placementDrive.create({
+      data: {
+        collegeId: COLLEGE_ID,
+        companyName: spec.company,
+        role: spec.role,
+        eligibilityCriteria: spec.criteria,
+        driveDate: daysAgo(-spec.inDays),
+        packageOffered: spec.package,
+      },
+    })
+    for (const applicant of spec.applicants) {
+      const student = await prisma.user.findUnique({
+        where: { regno: applicant.regno },
+        select: { id: true },
+      })
+      if (!student) continue
+      await prisma.placementApplication.create({
+        data: {
+          collegeId: COLLEGE_ID,
+          driveId: drive.id,
+          studentId: student.id,
+          status: applicant.status,
+          createdAt: daysAgo(Math.max(1, -spec.inDays + 2)),
+        },
+      })
+    }
+  }
+
+  // ── Phase 4: Certificates ────────────────────────────────────────────────
+  await prisma.certificate.deleteMany({ where: { collegeId: COLLEGE_ID } })
+  const CERT_SPECS = [
+    { regno: 'STU001', type: 'BONAFIDE', daysAgoIssued: 40 },
+    { regno: 'STU002', type: 'BONAFIDE', daysAgoIssued: 22 },
+    { regno: 'STU003', type: 'TRANSCRIPT', daysAgoIssued: 9 },
+  ]
+  for (const spec of CERT_SPECS) {
+    const student = await prisma.user.findUnique({ where: { regno: spec.regno }, select: { id: true } })
+    if (!student) continue
+    await prisma.certificate.create({
+      data: {
+        collegeId: COLLEGE_ID,
+        studentId: student.id,
+        type: spec.type,
+        issuedAt: daysAgo(spec.daysAgoIssued),
+        fileUrl: `/certificates/${spec.regno}-${spec.type.toLowerCase()}.pdf`,
+      },
+    })
+  }
+
+  // ── Phase 4: Parent ↔ child links ────────────────────────────────────────
+  // Mohan Menon (PAR001) is Kabir Menon's (STU003) guardian. Stored as a fact
+  // rather than inferred from a shared surname.
+  await prisma.parentChild.deleteMany({ where: { collegeId: COLLEGE_ID } })
+  const parentUser = await prisma.user.findUnique({ where: { regno: 'PAR001' }, select: { id: true } })
+  const childUser = await prisma.user.findUnique({ where: { regno: 'STU003' }, select: { id: true } })
+  if (parentUser && childUser) {
+    await prisma.parentChild.create({
+      data: {
+        collegeId: COLLEGE_ID,
+        parentId: parentUser.id,
+        studentId: childUser.id,
+        relation: 'FATHER',
+      },
+    })
+  }
+
+  // ── Admissions ──────────────────────────────────────────────────────────
+  // One row per stage of the funnel so the admissions screen has something to
+  // filter on and every branch (decide / reject / convert) is exercisable.
+  await prisma.admission.deleteMany({ where: { collegeId: COLLEGE_ID } })
+  const admissionOfficer = await prisma.user.findUnique({
+    where: { regno: 'ADM001' },
+    select: { id: true },
+  })
+  const ADMISSION_SPECS = [
+    {
+      applicantName: 'Ishaan Verma',
+      email: 'ishaan.verma@applicant.apex.edu',
+      phone: '+91 98100 11223',
+      programAppliedFor: 'B.Tech Computer Science',
+      meritScore: 91.4,
+      status: 'PENDING',
+      daysAgoApplied: 3,
+    },
+    {
+      applicantName: 'Diya Krishnan',
+      email: 'diya.krishnan@applicant.apex.edu',
+      phone: '+91 98100 44556',
+      programAppliedFor: 'B.Tech Electronics',
+      meritScore: 88.2,
+      status: 'PENDING',
+      daysAgoApplied: 5,
+    },
+    {
+      applicantName: 'Arjun Rao',
+      email: 'arjun.rao@applicant.apex.edu',
+      phone: '+91 98100 77889',
+      programAppliedFor: 'B.Tech Mechanical',
+      meritScore: 74.6,
+      status: 'PENDING',
+      daysAgoApplied: 6,
+    },
+    {
+      applicantName: 'Sneha Iyer',
+      email: 'sneha.iyer@applicant.apex.edu',
+      phone: '+91 98100 22334',
+      programAppliedFor: 'B.Tech Computer Science',
+      meritScore: 93.1,
+      status: 'APPROVED',
+      daysAgoApplied: 12,
+    },
+    {
+      applicantName: 'Rohan Gupta',
+      email: 'rohan.gupta@applicant.apex.edu',
+      phone: '+91 98100 55667',
+      programAppliedFor: 'B.Tech Civil',
+      meritScore: 61.8,
+      status: 'REJECTED',
+      daysAgoApplied: 14,
+    },
+    // Terminal state: already turned into a real student account (STU005).
+    {
+      applicantName: 'Kabir Menon',
+      email: 'kabir.menon@applicant.apex.edu',
+      phone: '+91 98100 99001',
+      programAppliedFor: 'B.Tech Computer Science',
+      meritScore: 89.7,
+      status: 'CONVERTED',
+      daysAgoApplied: 40,
+      convertedToRegno: 'STU005',
+    },
+  ]
+
+  for (const spec of ADMISSION_SPECS) {
+    const convertedTo = spec.convertedToRegno
+      ? await prisma.user.findUnique({
+          where: { regno: spec.convertedToRegno },
+          select: { id: true },
+        })
+      : null
+    await prisma.admission.create({
+      data: {
+        collegeId: COLLEGE_ID,
+        applicantName: spec.applicantName,
+        email: spec.email,
+        phone: spec.phone,
+        programAppliedFor: spec.programAppliedFor,
+        documentsUrl: `/admissions/${spec.email.split('@')[0]}.pdf`,
+        meritScore: spec.meritScore,
+        status: spec.status,
+        convertedToUserId: convertedTo?.id ?? null,
+        convertedByUserId: spec.status === 'CONVERTED' ? admissionOfficer?.id ?? null : null,
+        createdAt: daysAgo(spec.daysAgoApplied),
       },
     })
   }

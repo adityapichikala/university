@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { useApiMutation, type ApiError } from '@/components/dashboard/use-api-mutation'
 
 /* ── Shapes ────────────────────────────────────────────────────────────────── */
 
@@ -47,6 +48,8 @@ interface EnrollmentRow {
   studentId: string
   courseId: string
   classId: string
+  /** 'CONFIRMED' takes a seat; 'WAITLISTED' is queued. */
+  status: string
   student: Person
   course: { id: string; code: string; name: string }
   class: Ref
@@ -126,6 +129,11 @@ export function AcademicsClient({
   students,
 }: Props) {
   const router = useRouter()
+  const enroll = useApiMutation()
+  const withdrawMutation = useApiMutation()
+
+  /** Server message shown when a section is full; unlocks the waitlist button. */
+  const [waitlistOffer, setWaitlistOffer] = useState<string | null>(null)
 
   const [tab, setTab] = useState<Tab>('courses')
   const [courses, setCourses] = useState(initialCourses)
@@ -255,23 +263,49 @@ export function AcademicsClient({
 
   /* ── Enrollments ── */
 
-  async function createEnrollment(e: React.FormEvent) {
+  /**
+   * Idempotent by design: pressing Enroll twice is not an error, because the
+   * second press is asking for a state that already holds. The server answers
+   * 409 DUPLICATE and the hook turns that into a confirmation. Other 409s
+   * (full section, credit cap, timetable clash) stay refusals — and a full
+   * section comes back as an offer to join the waitlist rather than a dead end.
+   */
+  async function createEnrollment(e: React.FormEvent, joinWaitlist = false) {
     e.preventDefault()
-    const data = await request('/api/enrollments', 'POST', enrollForm)
-    if (!data) return
-    setEnrollments((prev) => [...prev, data.enrollment])
-    setMessage('Student enrolled')
-    router.refresh()
+    setError(null)
+    setMessage(null)
+    setWaitlistOffer(null)
+
+    const ok = await enroll.run(
+      '/api/enrollments',
+      'POST',
+      { ...enrollForm, joinWaitlist },
+      {
+        successTitle: joinWaitlist ? 'Joined waitlist' : 'Enrolled',
+        conflictTitle: 'Could not enrol',
+        conflictAsSuccess: (c: ApiError) => c.reason === 'DUPLICATE',
+        onConflict: (c: ApiError) => {
+          if (c.reason === 'SECTION_FULL') setWaitlistOffer(c.message)
+        },
+      }
+    )
+    if (!ok) return
   }
 
   async function withdraw(enrollment: EnrollmentRow) {
-    if (!window.confirm(`Withdraw ${enrollment.student.regno} from ${enrollment.course.code}?`)) {
-      return
-    }
-    const data = await request(`/api/enrollments/${enrollment.id}`, 'DELETE')
-    if (!data) return
+    const label =
+      enrollment.status === 'WAITLISTED'
+        ? `Remove ${enrollment.student.regno} from the ${enrollment.course.code} waitlist?`
+        : `Withdraw ${enrollment.student.regno} from ${enrollment.course.code}?`
+    if (!window.confirm(label)) return
+
+    setError(null)
+    setMessage(null)
+    const ok = await withdrawMutation.run(`/api/enrollments/${enrollment.id}`, 'DELETE', undefined, {
+      successTitle: 'Withdrawn',
+    })
+    if (!ok) return
     setEnrollments((prev) => prev.filter((e) => e.id !== enrollment.id))
-    setMessage('Enrollment withdrawn')
     router.refresh()
   }
 
@@ -608,10 +642,27 @@ export function AcademicsClient({
                       ))}
                     </select>
                   </Field>
-                  <Button type="submit" variant="accent" disabled={busy}>
+                  <Button type="submit" variant="accent" disabled={enroll.pending}>
                     <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
                     Enroll
                   </Button>
+
+                  {/* A full section is an offer, not a failure. The message
+                      comes from the server so the seat count is accurate. */}
+                  {waitlistOffer ? (
+                    <div className="rounded-xl border border-warning/30 bg-warning-soft/50 p-3">
+                      <p className="text-xs leading-relaxed text-muted">{waitlistOffer}</p>
+                      <Button
+                        type="button"
+                        className="mt-2 w-full"
+                        disabled={enroll.pending}
+                        onClick={(e) => createEnrollment(e, true)}
+                      >
+                        <span className="material-symbols-outlined text-[18px]">playlist_add</span>
+                        Join waitlist
+                      </Button>
+                    </div>
+                  ) : null}
                 </form>
               )}
             </CardContent>
@@ -632,12 +683,13 @@ export function AcademicsClient({
                       <th className="px-4 py-2.5 text-left font-medium">Student</th>
                       <th className="px-4 py-2.5 text-left font-medium">Course</th>
                       <th className="px-4 py-2.5 text-left font-medium">Class</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Status</th>
                       <th className="px-4 py-2.5 text-right font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {enrollments.length === 0 && (
-                      <EmptyRow colSpan={4}>No enrollments yet.</EmptyRow>
+                      <EmptyRow colSpan={5}>No enrollments yet.</EmptyRow>
                     )}
                     {enrollments.map((e) => (
                       <tr key={e.id} className="border-b border-border last:border-0">
@@ -650,12 +702,23 @@ export function AcademicsClient({
                           <span className="ml-2 text-muted">{e.course.name}</span>
                         </td>
                         <td className="px-4 py-3 text-muted">{e.class.name}</td>
+                        <td className="px-4 py-3">
+                          {e.status === 'WAITLISTED' ? (
+                            <span className="num rounded-full bg-warning-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-warning">
+                              Waitlisted
+                            </span>
+                          ) : (
+                            <span className="num rounded-full bg-success-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-success">
+                              Enrolled
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-right">
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => withdraw(e)}
-                            disabled={busy || !canManageEnrollments}
+                            disabled={withdrawMutation.pending || !canManageEnrollments}
                           >
                             <span className="material-symbols-outlined text-[18px]">
                               person_remove

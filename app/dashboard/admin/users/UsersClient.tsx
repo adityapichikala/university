@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DataTable, selectColumn } from '@/components/ui/data-table'
+import type { ColumnDef } from '@tanstack/react-table'
 
 interface UserRow {
   id: string
@@ -128,6 +130,107 @@ export function UsersClient({
     router.refresh()
   }
 
+  /**
+   * Column defs for the shared DataTable. Kept next to the handlers they call
+   * because three of the cells are controls, not text — the table stays
+   * presentational and this screen owns the behaviour.
+   */
+  const userColumns = useMemo<ColumnDef<UserRow, unknown>[]>(
+    () => [
+      selectColumn<UserRow>(),
+      {
+        accessorKey: 'regno',
+        header: 'Reg No',
+        cell: ({ row }) => (
+          <span className="num font-medium text-foreground">{row.original.regno}</span>
+        ),
+      },
+      { accessorKey: 'name', header: 'Name' },
+      {
+        accessorKey: 'email',
+        header: 'Email',
+        cell: ({ row }) => <span className="text-muted">{row.original.email}</span>,
+      },
+      {
+        accessorKey: 'role',
+        header: 'Role',
+        cell: ({ row }) => {
+          const u = row.original
+          return (
+            <select
+              value={u.role}
+              onChange={(e) => updateUser(u.id, { role: e.target.value })}
+              disabled={busy || u.id === currentUserId}
+              className="rounded-lg border border-border-strong bg-surface px-2 py-1.5 font-mono text-[11px] text-foreground focus:border-accent focus:outline-none disabled:opacity-50"
+            >
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABEL[r]}
+                </option>
+              ))}
+            </select>
+          )
+        },
+      },
+      {
+        accessorKey: 'status',
+        header: 'Status',
+        cell: ({ row }) => {
+          const active = row.original.status === 'ACTIVE'
+          return (
+            <span
+              className={cn(
+                'rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-wider',
+                active ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'
+              )}
+            >
+              {row.original.status}
+            </span>
+          )
+        },
+      },
+      {
+        id: 'actions',
+        header: '',
+        enableSorting: false,
+        // Buttons have nothing to export.
+        meta: { exportable: false },
+        cell: ({ row }) => {
+          const u = row.original
+          return (
+            <div className="flex justify-end gap-1">
+              <button
+                type="button"
+                onClick={() => setSelectedId(u.id)}
+                className={cn(
+                  'rounded-lg px-2.5 py-1.5 text-xs transition-colors',
+                  selectedId === u.id
+                    ? 'bg-accent text-white'
+                    : 'text-muted hover:bg-background hover:text-accent'
+                )}
+              >
+                Permissions
+              </button>
+              {u.id !== currentUserId && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    u.status === 'ACTIVE' ? deactivate(u.id) : updateUser(u.id, { status: 'ACTIVE' })
+                  }
+                  className="rounded-lg px-2.5 py-1.5 text-xs text-muted hover:bg-danger-soft hover:text-danger disabled:opacity-50"
+                >
+                  {u.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                </button>
+              )}
+            </div>
+          )
+        },
+      },
+    ],
+    [busy, currentUserId, selectedId]
+  )
+
   return (
     <div className="space-y-6">
       {error && (
@@ -147,104 +250,30 @@ export function UsersClient({
       )}
 
       {/* ── Users ─────────────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
+      <div className="flex flex-col gap-3">
+        <div>
           <CardTitle>Users</CardTitle>
           <p className="text-sm text-muted">
             <span className="num">{users.length}</span> account
             {users.length === 1 ? '' : 's'} in your college.
           </p>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  {['Reg No', 'Name', 'Email', 'Role', 'Status', ''].map((h) => (
-                    <th
-                      key={h}
-                      className="pb-2 font-mono text-[10px] uppercase tracking-wider text-subtle"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <tr
-                    key={u.id}
-                    className={cn(
-                      'border-b border-border/60 last:border-0',
-                      selectedId === u.id && 'bg-accent-soft/40'
-                    )}
-                  >
-                    <td className="num py-3 pr-4 font-medium">{u.regno}</td>
-                    <td className="pr-4">{u.name}</td>
-                    <td className="pr-4 text-muted">{u.email}</td>
-                    <td className="pr-4">
-                      <select
-                        value={u.role}
-                        onChange={(e) => updateUser(u.id, { role: e.target.value })}
-                        disabled={busy || u.id === currentUserId}
-                        className="rounded-lg border border-border-strong bg-surface px-2 py-1.5 font-mono text-[11px] text-foreground focus:border-accent focus:outline-none disabled:opacity-50"
-                      >
-                        {ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {ROLE_LABEL[r]}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="pr-4">
-                      <span
-                        className={cn(
-                          'rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-wider',
-                          u.status === 'ACTIVE'
-                            ? 'bg-success-soft text-success'
-                            : 'bg-danger-soft text-danger'
-                        )}
-                      >
-                        {u.status}
-                      </span>
-                    </td>
-                    <td className="py-3 text-right">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedId(u.id)}
-                          className={cn(
-                            'rounded-lg px-2.5 py-1.5 text-xs transition-colors',
-                            selectedId === u.id
-                              ? 'bg-accent text-white'
-                              : 'text-muted hover:bg-background hover:text-accent'
-                          )}
-                        >
-                          Permissions
-                        </button>
-                        {u.id !== currentUserId && (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() =>
-                              u.status === 'ACTIVE'
-                                ? deactivate(u.id)
-                                : updateUser(u.id, { status: 'ACTIVE' })
-                            }
-                            className="rounded-lg px-2.5 py-1.5 text-xs text-muted hover:bg-danger-soft hover:text-danger disabled:opacity-50"
-                          >
-                            {u.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+
+        <DataTable
+          data={users}
+          columns={userColumns}
+          getRowId={(u) => u.id}
+          enableSearch
+          enableExport
+          enableSelection
+          searchPlaceholder="Search users…"
+          exportFilename="users.csv"
+          pageSizeOptions={[10, 25, 50]}
+          initialPageSize={10}
+          emptyTitle="No users match"
+          emptyDescription="Create an account below, or clear the search."
+        />
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* ── Create user ────────────────────────────────────────────────── */}

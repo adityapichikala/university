@@ -27,6 +27,15 @@ function overview(slug: string, label = 'Dashboard'): NavSection {
 }
 
 /**
+ * Staff self-service: one shared route instead of eight per-role copies.
+ * It is gated on `leave.request` rather than a role, so link it wherever
+ * that permission is held.
+ */
+const myLeave = (): NavItem => ({ label: 'My Leave', icon: 'event_note', href: '/dashboard/leave' })
+
+const selfService = (): NavSection => ({ title: 'Self-service', items: [myLeave()] })
+
+/**
  * Role-aware navigation. Tier 1 decides the menu — but remember: hiding a link
  * is convenience, the API rejecting the request is security (architecture doc §2).
  */
@@ -40,7 +49,7 @@ export function getNav(role: Role): NavSection[] {
         {
           title: 'Academics',
           items: [
-            soon('My Courses', 'menu_book'),
+            { label: 'My Courses', icon: 'menu_book', href: `/dashboard/${slug}/courses` },
             { label: 'Timetable', icon: 'calendar_month', href: `/dashboard/${slug}/timetable` },
             { label: 'Attendance', icon: 'fact_check', href: `/dashboard/${slug}/attendance` },
             { label: 'Assignments', icon: 'assignment', href: `/dashboard/${slug}/assignments` },
@@ -53,7 +62,12 @@ export function getNav(role: Role): NavSection[] {
             { label: 'Fees', icon: 'payments', href: `/dashboard/${slug}/fees` },
             { label: 'Library', icon: 'local_library', href: `/dashboard/${slug}/library` },
             { label: 'Hostel', icon: 'hotel', href: `/dashboard/${slug}/hostel` },
-            soon('Placements', 'work'),
+            {
+              label: 'Announcements',
+              icon: 'campaign',
+              href: `/dashboard/${slug}/announcements`,
+            },
+            { label: 'Placements', icon: 'work', href: `/dashboard/${slug}/placements` },
           ],
         },
       ]
@@ -70,11 +84,16 @@ export function getNav(role: Role): NavSection[] {
             { label: 'Assignments', icon: 'assignment', href: `/dashboard/${slug}/assignments` },
           ],
         },
+        selfService(),
         {
           title: 'Class',
           items: [
             { label: 'Timetable', icon: 'calendar_month', href: `/dashboard/${slug}/timetable` },
-            soon('Announcements', 'campaign'),
+            {
+              label: 'Announcements',
+              icon: 'campaign',
+              href: `/dashboard/${slug}/announcements`,
+            },
           ],
         },
       ]
@@ -85,11 +104,14 @@ export function getNav(role: Role): NavSection[] {
         {
           title: 'Department',
           items: [
-            soon('Faculty', 'groups'),
-            soon('Courses', 'menu_book'),
-            soon('Approvals', 'task_alt'),
+            // One portal, three sections — the anchors jump straight to the
+            // relevant card instead of making three near-identical routes.
+            { label: 'Faculty', icon: 'groups', href: `/dashboard/${slug}#faculty` },
+            { label: 'Courses', icon: 'menu_book', href: `/dashboard/${slug}#courses` },
+            { label: 'Leave Approvals', icon: 'task_alt', href: `/dashboard/${slug}#leave` },
           ],
         },
+        selfService(),
       ]
 
     case 'ADMIN':
@@ -100,8 +122,8 @@ export function getNav(role: Role): NavSection[] {
           items: [
             { label: 'Users', icon: 'group', href: `/dashboard/${slug}/users` },
             { label: 'Academics', icon: 'menu_book', href: `/dashboard/${slug}/academics` },
-            soon('Departments', 'account_tree'),
-            soon('Admissions', 'how_to_reg'),
+            { label: 'Departments', icon: 'account_tree', href: `/dashboard/${slug}/departments` },
+            { label: 'Admissions', icon: 'how_to_reg', href: `/dashboard/${slug}/admissions` },
           ],
         },
         {
@@ -120,11 +142,16 @@ export function getNav(role: Role): NavSection[] {
         {
           title: 'Records',
           items: [
-            soon('Exams', 'quiz'),
-            soon('Results', 'military_tech'),
-            soon('Certificates', 'workspace_premium'),
+            { label: 'Issue Certificate', icon: 'workspace_premium', href: `/dashboard/${slug}#issue` },
+            {
+              label: 'Certificate Register',
+              icon: 'history_edu',
+              href: `/dashboard/${slug}#certificates`,
+            },
+            { label: 'Results', icon: 'military_tech', href: `/dashboard/${slug}#results` },
           ],
         },
+        selfService(),
       ]
 
     case 'FINANCE':
@@ -132,8 +159,12 @@ export function getNav(role: Role): NavSection[] {
         overview(slug),
         {
           title: 'Finance',
-          items: [soon('Fee Structures', 'payments'), soon('Reports', 'insights')],
+          items: [
+            { label: 'Fee Desk', icon: 'payments', href: `/dashboard/${slug}` },
+            soon('Reports', 'insights'),
+          ],
         },
+        selfService(),
       ]
 
     case 'LIBRARIAN':
@@ -141,8 +172,12 @@ export function getNav(role: Role): NavSection[] {
         overview(slug),
         {
           title: 'Library',
-          items: [soon('Catalog', 'auto_stories'), soon('Issues & Returns', 'swap_horiz')],
+          items: [
+            { label: 'Circulation Desk', icon: 'swap_horiz', href: `/dashboard/${slug}` },
+            soon('Catalog Import', 'auto_stories'),
+          ],
         },
+        selfService(),
       ]
 
     case 'WARDEN':
@@ -150,8 +185,12 @@ export function getNav(role: Role): NavSection[] {
         overview(slug),
         {
           title: 'Hostel',
-          items: [soon('Rooms', 'door_front'), soon('Allocations', 'bed')],
+          items: [
+            { label: 'Rooms & Beds', icon: 'bed', href: `/dashboard/${slug}` },
+            soon('Maintenance', 'build'),
+          ],
         },
+        selfService(),
       ]
 
     case 'HR':
@@ -159,8 +198,12 @@ export function getNav(role: Role): NavSection[] {
         overview(slug),
         {
           title: 'People',
-          items: [soon('Employees', 'badge'), soon('Leave Requests', 'event_busy')],
+          items: [
+            { label: 'Employees', icon: 'badge', href: `/dashboard/${slug}#employees` },
+            { label: 'Leave Requests', icon: 'event_busy', href: `/dashboard/${slug}#leave` },
+          ],
         },
+        selfService(),
       ]
 
     case 'PLACEMENT':
@@ -168,8 +211,12 @@ export function getNav(role: Role): NavSection[] {
         overview(slug),
         {
           title: 'Placements',
-          items: [soon('Drives', 'business_center'), soon('Applications', 'work')],
+          items: [
+            { label: 'Drives', icon: 'business_center', href: `/dashboard/${slug}` },
+            soon('Reports', 'insights'),
+          ],
         },
+        selfService(),
       ]
 
     case 'PARENT':
@@ -177,7 +224,11 @@ export function getNav(role: Role): NavSection[] {
         overview(slug),
         {
           title: 'My Child',
-          items: [soon('Attendance', 'fact_check'), soon('Results', 'military_tech')],
+          items: [
+            { label: 'Attendance', icon: 'fact_check', href: `/dashboard/${slug}#attendance` },
+            { label: 'Results', icon: 'military_tech', href: `/dashboard/${slug}#results` },
+            { label: 'Fees', icon: 'payments', href: `/dashboard/${slug}#fees` },
+          ],
         },
       ]
 

@@ -51,6 +51,7 @@ export default async function AdminAcademicsPage() {
         studentId: true,
         courseId: true,
         classId: true,
+        status: true,
         student: { select: { id: true, regno: true, name: true } },
         course: { select: { id: true, code: true, name: true } },
         class: { select: { id: true, name: true } },
