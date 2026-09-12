@@ -192,16 +192,22 @@ export default async function StudentFeesPage() {
                                 a fully settled record has no payment to make. */}
                             {r.outstanding > 0 ? (
                               <PayOnlineButton
-                                record={{
-                                  id: r.id,
-                                  programName: r.feeStructure.programName,
-                                  batchYear: r.feeStructure.batchYear,
-                                  billedDisplay: formatCurrency(r.feeStructure.amount),
-                                  paidDisplay: formatCurrency(r.amountPaid),
-                                  outstandingDisplay: formatCurrency(r.outstanding),
-                                  dueDate: r.feeStructure.dueDate.toISOString().slice(0, 10),
-                                  status: r.status,
+                                payable={{
+                                  title: r.feeStructure.programName,
+                                  subtitle: String(r.feeStructure.batchYear),
+                                  amountDisplay: formatCurrency(r.outstanding),
+                                  reference: `FEE-${r.id.slice(-8).toUpperCase()}`,
                                   overdue: r.status === 'OVERDUE',
+                                  details: [
+                                    {
+                                      label: 'Due',
+                                      value: r.feeStructure.dueDate.toISOString().slice(0, 10),
+                                      danger: r.status === 'OVERDUE',
+                                    },
+                                    { label: 'Billed', value: formatCurrency(r.feeStructure.amount) },
+                                    { label: 'Already paid', value: formatCurrency(r.amountPaid) },
+                                    { label: 'Status', value: r.status },
+                                  ],
                                 }}
                               />
                             ) : (

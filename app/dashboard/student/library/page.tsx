@@ -1,9 +1,10 @@
 import { prisma } from '@/lib/db'
 import { requireUser, scopes } from '@/lib/rbac'
 import { LIBRARY_ISSUE_SELECT } from '@/lib/library-query'
-import { computeFine, daysLate, issueState } from '@/lib/library'
+import { FINE_PER_DAY, computeFine, daysLate, issueState } from '@/lib/library'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/states'
+import { PayOnlineButton } from '@/components/dashboard/pay-online'
 import { cn } from '@/lib/utils'
 
 export const metadata = { title: 'My Library · Apex University ERP' }
@@ -12,7 +13,8 @@ export const metadata = { title: 'My Library · Apex University ERP' }
  * Student › My Library.
  *
  * Fines on a live loan are computed at render time, so the amount shown grows
- * day by day exactly as the desk would charge it.
+ * day by day exactly as the desk would charge it — which is also why the pay
+ * panel is careful to say the figure is still moving on an unreturned loan.
  */
 
 const STATE_STYLES: Record<string, string> = {
@@ -125,6 +127,9 @@ export default async function StudentLibraryPage() {
                       <th className="px-4 py-2.5 text-left font-medium">Returned</th>
                       <th className="px-4 py-2.5 text-right font-medium">Fine</th>
                       <th className="px-4 py-2.5 text-center font-medium">State</th>
+                      <th className="px-4 py-2.5 text-right font-medium">
+                        <span className="sr-only">Actions</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -163,6 +168,44 @@ export default async function StudentLibraryPage() {
                           >
                             {r.state}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {/* Offered only where there is a fine to settle. A
+                              loan still out keeps accruing, so the panel says
+                              so rather than quoting a figure that will move. */}
+                          {r.runningFine > 0 ? (
+                            <PayOnlineButton
+                              payable={{
+                                title: r.item.title,
+                                subtitle: r.item.author,
+                                amountDisplay: `₹${r.runningFine}`,
+                                reference: `LIB-${r.id.slice(-8).toUpperCase()}`,
+                                overdue: r.lateDays > 0,
+                                details: [
+                                  { label: 'Due', value: r.dueAt.toISOString().slice(0, 10) },
+                                  {
+                                    label: 'Days late',
+                                    value: `${r.lateDays}`,
+                                    danger: r.lateDays > 0,
+                                  },
+                                  {
+                                    label: 'Returned',
+                                    value: r.returnedAt
+                                      ? r.returnedAt.toISOString().slice(0, 10)
+                                      : 'Not yet',
+                                  },
+                                  { label: 'Rate', value: `₹${FINE_PER_DAY} / day` },
+                                ],
+                                guidance:
+                                  'pay at the library counter quoting the reference above. ' +
+                                  (r.returnedAt
+                                    ? 'The amount is final for this loan.'
+                                    : 'This fine is still accruing daily until the book is returned, so the counter amount may be higher by the time you pay.'),
+                              }}
+                            />
+                          ) : (
+                            <span className="text-xs text-subtle">No fine</span>
+                          )}
                         </td>
                       </tr>
                     ))}

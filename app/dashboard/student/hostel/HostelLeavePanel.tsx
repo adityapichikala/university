@@ -16,7 +16,13 @@ import {
   parseDateOnly,
   toDateInput,
 } from '@/lib/hostel-leave'
-import { cancelHostelLeave, requestHostelLeave, type HostelLeaveRow } from './actions'
+import {
+  cancelHostelLeave,
+  requestHostelLeave,
+  generateLeaveSlipQr,
+  downloadLeaveSlipPdf,
+  type HostelLeaveRow,
+} from './actions'
 
 /**
  * Student half of hostel leave: file a request, cancel a pending one, and
@@ -45,6 +51,7 @@ export function HostelLeavePanel({ student, leaves }: Props) {
   const [pending, setPending] = React.useState(false)
   const [open, setOpen] = React.useState(false)
   const [printId, setPrintId] = React.useState<string | null>(null)
+  const [qrUrl, setQrUrl] = React.useState<string | null>(null)
 
   // Controlled dates so the night count can update as the student types.
   const today = toDateInput(new Date())
@@ -109,6 +116,35 @@ export function HostelLeavePanel({ student, leaves }: Props) {
     if (printId === row.id) setPrintId(null)
   }
 
+  React.useEffect(() => {
+    if (!printId) {
+      setQrUrl(null)
+      return
+    }
+    generateLeaveSlipQr({ id: printId }).then((res) => {
+      if (res.ok) setQrUrl(res.data.dataUrl)
+    })
+  }, [printId])
+
+  async function downloadPdf(row: HostelLeaveRow) {
+    setPending(true)
+    const res = await downloadLeaveSlipPdf({ id: row.id })
+    setPending(false)
+    if (!res.ok) {
+      error('Download failed', res.error)
+      return
+    }
+    const blob = new Blob([Buffer.from(res.data.base64, 'base64')], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = res.data.filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const printing = printId ? leaves.find((l) => l.id === printId) ?? null : null
 
   // The slip is the only thing on the page when printing.
@@ -120,10 +156,16 @@ export function HostelLeavePanel({ student, leaves }: Props) {
             <span className="material-symbols-outlined text-[18px] leading-none">arrow_back</span>
             Back
           </Button>
-          <Button variant="accent" size="sm" onClick={() => window.print()}>
-            <span className="material-symbols-outlined text-[18px] leading-none">print</span>
-            Print slip
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={pending} onClick={() => downloadPdf(printing)}>
+              <span className="material-symbols-outlined text-[18px] leading-none">download</span>
+              Download PDF
+            </Button>
+            <Button variant="accent" size="sm" onClick={() => window.print()}>
+              <span className="material-symbols-outlined text-[18px] leading-none">print</span>
+              Print slip
+            </Button>
+          </div>
         </div>
 
         <div className="rounded-xl border border-border-strong bg-white p-8 text-slate-900 shadow-soft print:border-0 print:shadow-none">
@@ -208,10 +250,30 @@ export function HostelLeavePanel({ student, leaves }: Props) {
             </div>
           </div>
 
-          <p className="mt-6 text-[11px] leading-relaxed text-slate-600">
-            Present this slip at the gate on departure and on return. It is valid only for the
-            dates shown.
-          </p>
+          {/* QR code — tamper-evident because the encoded payload matches the
+              printed dates and status exactly. */}
+          <div className="mt-6 flex items-end justify-between gap-4">
+            <p className="max-w-[16rem] text-[11px] leading-relaxed text-slate-600">
+              Present this slip at the gate on departure and on return. It is valid only for the
+              dates shown.
+            </p>
+            <div className="text-center">
+              {qrUrl ? (
+                <img
+                  src={qrUrl}
+                  alt="Verification QR"
+                  className="mx-auto h-28 w-28"
+                />
+              ) : (
+                <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-lg border border-dashed border-slate-300">
+                  <Spinner />
+                </div>
+              )}
+              <p className="mt-1 text-[10px] uppercase tracking-wide text-slate-500">
+                Scan to verify
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     )

@@ -7,6 +7,11 @@ import { PERMISSIONS } from '@/lib/roles'
 import { audit } from '@/lib/audit'
 import type { MutationResult } from '@/lib/permissions'
 import { MAX_LEAVE_NIGHTS, parseDateOnly } from '@/lib/hostel-leave'
+import {
+  leaveSlipQrDataUrl,
+  buildLeaveSlipPdf,
+  type LeaveSlipFacts,
+} from '@/lib/leave-slip'
 
 /**
  * Hostel leave, student side.
@@ -215,5 +220,133 @@ export async function decideHostelLeave(input: {
   } catch (error) {
     console.error('[hostel-leave] decision failed', error)
     return { ok: false, error: 'Could not record that decision' }
+  }
+}
+
+/**
+ * Generate a QR data-url for the leave slip.
+ * The caller must own the leave row.
+ */
+export async function generateLeaveSlipQr(
+  input: { id: string }
+): Promise<MutationResult<{ dataUrl: string }>> {
+  const ctx = await requireUser({ route: 'student' })
+  const collegeId = ctx.user.collegeId
+  if (!collegeId) return { ok: false, error: 'No college scope' }
+
+  try {
+    const row = await prisma.hostelLeave.findFirst({
+      where: { id: input.id, collegeId, studentId: ctx.user.id },
+      include: {
+        decidedBy: { select: { name: true } },
+        student: {
+          select: {
+            name: true,
+            regno: true,
+            hostelAllocations: {
+              where: { vacatedAt: null },
+              select: {
+                room: { select: { block: true, roomNumber: true } },
+              },
+              take: 1,
+            },
+          },
+        },
+      },
+    })
+    if (!row) return { ok: false, error: 'Leave request not found' }
+
+    const liveAlloc = row.student.hostelAllocations[0] ?? null
+    const facts: LeaveSlipFacts = {
+      id: row.id,
+      studentName: row.student.name,
+      regno: row.student.regno,
+      roomLabel: liveAlloc
+        ? `${liveAlloc.room.block}-${liveAlloc.room.roomNumber}`
+        : null,
+      block: liveAlloc ? String(liveAlloc.room.block) : null,
+      fromDate: row.fromDate.toISOString().slice(0, 10),
+      toDate: row.toDate.toISOString().slice(0, 10),
+      nights: Math.max(1, Math.round((row.toDate.getTime() - row.fromDate.getTime()) / 86_400_000)),
+      reason: row.reason,
+      status: row.status,
+      decidedByName: row.decidedBy?.name ?? null,
+      decidedAt: row.decidedAt ? row.decidedAt.toISOString().slice(0, 10) : null,
+      note: row.decisionNote,
+    }
+
+    const dataUrl = await leaveSlipQrDataUrl(facts)
+    return { ok: true, data: { dataUrl } }
+  } catch (error) {
+    console.error('[hostel-leave] qr generation failed', error)
+    return { ok: false, error: 'Could not generate QR code' }
+  }
+}
+
+/**
+ * Build and return the leave slip PDF as a base64 string.
+ * The caller must own the leave row.
+ */
+export async function downloadLeaveSlipPdf(
+  input: { id: string }
+): Promise<MutationResult<{ base64: string; filename: string }>> {
+  const ctx = await requireUser({ route: 'student' })
+  const collegeId = ctx.user.collegeId
+  if (!collegeId) return { ok: false, error: 'No college scope' }
+
+  try {
+    const row = await prisma.hostelLeave.findFirst({
+      where: { id: input.id, collegeId, studentId: ctx.user.id },
+      include: {
+        decidedBy: { select: { name: true } },
+        student: {
+          select: {
+            name: true,
+            regno: true,
+            hostelAllocations: {
+              where: { vacatedAt: null },
+              select: {
+                room: { select: { block: true, roomNumber: true } },
+              },
+              take: 1,
+            },
+          },
+        },
+      },
+    })
+    if (!row) return { ok: false, error: 'Leave request not found' }
+
+    const liveAlloc = row.student.hostelAllocations[0] ?? null
+    const facts: LeaveSlipFacts = {
+      id: row.id,
+      studentName: row.student.name,
+      regno: row.student.regno,
+      roomLabel: liveAlloc
+        ? `${liveAlloc.room.block}-${liveAlloc.room.roomNumber}`
+        : null,
+      block: liveAlloc ? String(liveAlloc.room.block) : null,
+      fromDate: row.fromDate.toISOString().slice(0, 10),
+      toDate: row.toDate.toISOString().slice(0, 10),
+      nights: Math.max(1, Math.round((row.toDate.getTime() - row.fromDate.getTime()) / 86_400_000)),
+      reason: row.reason,
+      status: row.status,
+      decidedByName: row.decidedBy?.name ?? null,
+      decidedAt: row.decidedAt ? row.decidedAt.toISOString().slice(0, 10) : null,
+      note: row.decisionNote,
+    }
+
+    const pdf = buildLeaveSlipPdf(facts)
+    const base64 = pdf.toString('base64')
+    const ref = `LS-${row.id.slice(-8).toUpperCase()}`
+    return {
+      ok: true,
+      data: {
+        base64,
+        filename: `Apex-Hostel-Leave-${ref}.pdf`,
+      },
+    }
+  } catch (error) {
+    console.error('[hostel-leave] pdf generation failed', error)
+    return { ok: false, error: 'Could not generate PDF' }
   }
 }
