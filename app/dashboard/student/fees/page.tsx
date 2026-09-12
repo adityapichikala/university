@@ -5,6 +5,7 @@ import { feeStatusFor, formatCurrency, summarizeFees } from '@/lib/fees'
 import { FEE_RECORD_SELECT } from '@/lib/fees-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/states'
+import { PayOnlineButton } from '@/components/dashboard/pay-online'
 import { cn } from '@/lib/utils'
 
 export const metadata = { title: 'My Fees · Apex University ERP' }
@@ -12,8 +13,10 @@ export const metadata = { title: 'My Fees · Apex University ERP' }
 /**
  * Student › My Fees.
  *
- * Read-only by design: a payment is a finance-officer action, so this screen
- * shows the ledger rather than a "Pay now" button that could not be honoured.
+ * The ledger is read-only — a payment is a finance-officer action, and the
+ * screen never claims otherwise. "Pay online" opens an explanation rather than
+ * a checkout, because the gateway is not live yet and a control that silently
+ * does nothing is worse than one that says so.
  */
 
 const STATUS_STYLES: Record<string, string> = {
@@ -142,6 +145,9 @@ export default async function StudentFeesPage() {
                       <th className="px-4 py-2.5 text-right font-medium">Paid</th>
                       <th className="px-4 py-2.5 text-right font-medium">Balance</th>
                       <th className="px-4 py-2.5 text-center font-medium">Status</th>
+                      <th className="px-4 py-2.5 text-right font-medium">
+                        <span className="sr-only">Actions</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -181,10 +187,31 @@ export default async function StudentFeesPage() {
                               {r.status}
                             </span>
                           </td>
+                          <td className="px-4 py-3 text-right">
+                            {/* Only offered when there is something left to pay —
+                                a fully settled record has no payment to make. */}
+                            {r.outstanding > 0 ? (
+                              <PayOnlineButton
+                                record={{
+                                  id: r.id,
+                                  programName: r.feeStructure.programName,
+                                  batchYear: r.feeStructure.batchYear,
+                                  billedDisplay: formatCurrency(r.feeStructure.amount),
+                                  paidDisplay: formatCurrency(r.amountPaid),
+                                  outstandingDisplay: formatCurrency(r.outstanding),
+                                  dueDate: r.feeStructure.dueDate.toISOString().slice(0, 10),
+                                  status: r.status,
+                                  overdue: r.status === 'OVERDUE',
+                                }}
+                              />
+                            ) : (
+                              <span className="text-xs text-subtle">Settled</span>
+                            )}
+                          </td>
                         </tr>
                         {r.payments.length > 0 ? (
                           <tr className="border-b border-border last:border-0 bg-background">
-                            <td colSpan={6} className="px-4 py-2">
+                            <td colSpan={7} className="px-4 py-2">
                               <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-subtle">
                                 Installments
                               </p>

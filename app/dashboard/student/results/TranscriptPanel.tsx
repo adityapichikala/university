@@ -5,12 +5,23 @@ import { cn } from '@/lib/utils'
 /**
  * The credit-weighted half of "My Results".
  *
+ * Two credit-weighted views, both from the same numbers:
+ *   • a semester-wise GPA table (the "SGPA" per semester), and
+ *   • the overall CGPA, which is the credit-weighted mean of those semesters.
+ *
  * Deliberately states that a course's exams are averaged: the schema has no
  * exam weightings, and quietly inventing a policy would be worse than showing
  * the real one.
  */
 
-export function TranscriptPanel({ transcript }: { transcript: Transcript }) {
+export function TranscriptPanel({
+  transcript,
+  highlightSemesterId,
+}: {
+  transcript: Transcript
+  /** The semester currently selected in the page's filter, if any. */
+  highlightSemesterId?: string | null
+}) {
   if (transcript.courses.length === 0) {
     return null
   }
@@ -23,7 +34,7 @@ export function TranscriptPanel({ transcript }: { transcript: Transcript }) {
           <p className="num mt-1 text-3xl font-bold leading-none text-accent">
             {transcript.cgpaDisplay}
           </p>
-          <p className="mt-1 text-[11px] text-subtle">out of 10</p>
+          <p className="mt-1 text-[11px] text-subtle">out of 10 · credit-weighted</p>
         </Card>
 
         <Card className="p-4">
@@ -49,11 +60,101 @@ export function TranscriptPanel({ transcript }: { transcript: Transcript }) {
             {transcript.courses.length}
           </p>
           <p className="mt-1 text-[11px] text-subtle">
-            from {transcript.publishedResultCount} published result
-            {transcript.publishedResultCount === 1 ? '' : 's'}
+            across {transcript.semesters.length} semester
+            {transcript.semesters.length === 1 ? '' : 's'}
           </p>
         </Card>
       </div>
+
+      {/* ── Semester-wise GPA ───────────────────────────────────────────────
+          Shown only when results actually span more than one semester — a
+          single-row table would just repeat the CGPA card above it. */}
+      {transcript.semesters.length > 1 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Semester-wise GPA</CardTitle>
+            <CardDescription>
+              Each semester&rsquo;s GPA is credit-weighted on its own. The CGPA above is the
+              credit-weighted mean of these rows, so heavier semesters move it further.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-y border-border text-xs uppercase tracking-wide text-muted">
+                    <th className="px-4 py-2.5 text-left font-medium">Semester</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Courses</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Credits</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Earned</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Points</th>
+                    <th className="px-4 py-2.5 text-right font-medium">GPA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transcript.semesters.map((s) => {
+                    const active = Boolean(highlightSemesterId) && s.semesterId === highlightSemesterId
+                    return (
+                      <tr
+                        key={s.semesterId ?? 'unassigned'}
+                        className={cn(
+                          'border-b border-border last:border-0',
+                          active && 'bg-accent-soft/40'
+                        )}
+                      >
+                        <td className="px-4 py-3">
+                          <span
+                            className={cn(
+                              'font-medium',
+                              active ? 'text-accent' : 'text-foreground'
+                            )}
+                          >
+                            {s.semesterName}
+                          </span>
+                          {active ? (
+                            <span className="ml-2 text-[11px] text-accent">· selected</span>
+                          ) : null}
+                        </td>
+                        <td className="num px-4 py-3 text-right text-muted">{s.courseCount}</td>
+                        <td className="num px-4 py-3 text-right text-muted">
+                          {s.attemptedCredits}
+                        </td>
+                        <td className="num px-4 py-3 text-right text-muted">{s.earnedCredits}</td>
+                        <td className="num px-4 py-3 text-right text-muted">
+                          {s.weightedPoints.toFixed(1)}
+                        </td>
+                        <td className="num px-4 py-3 text-right font-semibold text-foreground">
+                          {s.gpaDisplay}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-border-strong bg-background">
+                    <td className="px-4 py-3 text-xs font-medium text-muted">Overall</td>
+                    <td className="num px-4 py-3 text-right font-medium text-foreground">
+                      {transcript.courses.length}
+                    </td>
+                    <td className="num px-4 py-3 text-right font-medium text-foreground">
+                      {transcript.attemptedCredits}
+                    </td>
+                    <td className="num px-4 py-3 text-right font-medium text-foreground">
+                      {transcript.earnedCredits}
+                    </td>
+                    <td className="num px-4 py-3 text-right font-medium text-foreground">
+                      {transcript.weightedPoints.toFixed(1)}
+                    </td>
+                    <td className="num px-4 py-3 text-right font-semibold text-accent">
+                      {transcript.cgpaDisplay}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

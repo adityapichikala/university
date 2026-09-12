@@ -25,6 +25,10 @@ export interface HostelLeaveRow {
   status: string
   nights: number
   note: string | null
+  /** ISO date the warden decided, or null while still pending. */
+  decidedAt?: string | null
+  /** Name of the warden who decided — the slip names its approver. */
+  decidedByName?: string | null
 }
 
 export async function requestHostelLeave(input: {

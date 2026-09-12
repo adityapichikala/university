@@ -8,7 +8,12 @@ set -uo pipefail
 BASE="${BASE:-http://localhost:3000}"
 export no_proxy='localhost,127.0.0.1' NO_PROXY='localhost,127.0.0.1'
 CURL="curl --noproxy localhost,127.0.0.1"
+# curl here is a native Windows binary: it cannot write to a Git-Bash /tmp
+# path, and a silent write failure means an empty cookie jar and a 307 on
+# every authenticated request. Normalise to a mixed path (C:/...) that both
+# the shell and curl understand.
 TMP="$(mktemp -d)"
+if command -v cygpath >/dev/null 2>&1; then TMP="$(cygpath -m "$TMP")"; fi
 pass=0
 fail=0
 
@@ -175,9 +180,10 @@ code=$($CURL -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/telemetry/cras
 
 ########################################################################
 head2 "9. Crash row landed in the audit chain"
-ADMIN_COOKIE=$(basename "$ADM" .jar)
+# `actionType` is an exact-match filter; `q` searches targetEntity/details only,
+# so querying the verb with `q` would never match.
 code=$($CURL -s -o "$TMP/audit.json" -w '%{http_code}' -b "$ADM" \
-  "$BASE/api/admin/audit?q=SYSTEM_CRASH")
+  "$BASE/api/admin/audit?actionType=SYSTEM_CRASH")
 if [ "$code" = "200" ]; then
   if grep -q "SYSTEM_CRASH" "$TMP/audit.json"; then
     ok "SYSTEM_CRASH is queryable in the audit trail"
@@ -187,7 +193,6 @@ if [ "$code" = "200" ]; then
 else
   printf '  \033[33mSKIP\033[0m audit query returned %s\n' "$code"
 fi
-unset ADMIN_COOKIE
 
 ########################################################################
 head2 "10. Hostel leave UI"

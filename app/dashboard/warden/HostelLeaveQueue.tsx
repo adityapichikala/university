@@ -39,9 +39,18 @@ export interface HostelLeaveQueueRow {
 
 interface Props {
   rows: HostelLeaveQueueRow[]
+  /**
+   * Whether the caller actually holds `hostel.manage`.
+   *
+   * The queue renders read-only without it rather than showing decision
+   * controls that the server would refuse. That keeps the component correct if
+   * the page's guard ever widens — a clerk with read-only hostel access should
+   * see the queue, not buttons that fail.
+   */
+  canDecide?: boolean
 }
 
-export function HostelLeaveQueue({ rows }: Props) {
+export function HostelLeaveQueue({ rows, canDecide = true }: Props) {
   const { success, error } = useToast()
   const [pending, setPending] = React.useState(false)
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
@@ -61,6 +70,7 @@ export function HostelLeaveQueue({ rows }: Props) {
   }
 
   async function decide(ids: string[], decision: 'APPROVED' | 'REJECTED') {
+    if (!canDecide) return
     if (ids.length === 0) {
       error('Nothing selected', 'Tick at least one request first.')
       return
@@ -116,21 +126,27 @@ export function HostelLeaveQueue({ rows }: Props) {
           <>
             <div className="space-y-3">
               {queue.map((r) => (
-                <label
+                // A <div>, not a <label>: the row carries its own Accept and
+                // Reject buttons, and a label would make clicking either one
+                // toggle the checkbox as well.
+                <div
                   key={r.id}
                   className={cn(
-                    'flex cursor-pointer gap-3 rounded-xl border p-4 transition-colors',
+                    'flex gap-3 rounded-xl border p-4 transition-colors',
                     selected.has(r.id)
                       ? 'border-accent bg-accent-soft/40'
-                      : 'border-border bg-background hover:border-border-strong'
+                      : 'border-border bg-background'
                   )}
                 >
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]"
-                    checked={selected.has(r.id)}
-                    onChange={() => toggle(r.id)}
-                  />
+                  {canDecide ? (
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${r.studentName}'s request`}
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]"
+                      checked={selected.has(r.id)}
+                      onChange={() => toggle(r.id)}
+                    />
+                  ) : null}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <span className="text-sm font-semibold text-foreground">
@@ -150,46 +166,79 @@ export function HostelLeaveQueue({ rows }: Props) {
                       </span>
                     </p>
                     <p className="mt-2 text-xs leading-relaxed text-muted">{r.reason}</p>
+
+                    {/* Per-row decision: a warden clearing one request should
+                        not have to tick a box and then find the bulk button. */}
+                    {canDecide ? (
+                      <div className="mt-3 flex items-center gap-2">
+                        <Button
+                          variant="accent"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => decide([r.id], 'APPROVED')}
+                        >
+                          <span className="material-symbols-outlined text-[16px] leading-none">
+                            check
+                          </span>
+                          Accept
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => decide([r.id], 'REJECTED')}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
-                </label>
+                </div>
               ))}
             </div>
 
-            <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-background p-4">
-              <label className="min-w-[16rem] flex-1">
-                <span className="mb-1.5 block text-xs font-medium text-muted">
-                  Note <span className="text-subtle">(optional, shown to the student)</span>
-                </span>
-                <Input
-                  value={note}
-                  maxLength={300}
-                  placeholder="e.g. Return by 20:00 on the last day."
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </label>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={pending || selected.size === 0}
-                  onClick={() => decide(Array.from(selected), 'REJECTED')}
-                >
-                  {pending ? <Spinner /> : null}
-                  Reject selected
-                </Button>
-                <Button
-                  variant="accent"
-                  size="sm"
-                  disabled={pending || selected.size === 0}
-                  onClick={() => decide(Array.from(selected), 'APPROVED')}
-                >
-                  {pending ? <Spinner /> : null}
-                  Approve selected
-                </Button>
+            {canDecide ? (
+              <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-background p-4">
+                <label className="min-w-[16rem] flex-1">
+                  <span className="mb-1.5 block text-xs font-medium text-muted">
+                    Note <span className="text-subtle">(optional, shown to the student)</span>
+                  </span>
+                  <Input
+                    value={note}
+                    maxLength={300}
+                    placeholder="e.g. Return by 20:00 on the last day."
+                    onChange={(e) => setNote(e.target.value)}
+                  />
+                </label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pending || selected.size === 0}
+                    onClick={() => decide(Array.from(selected), 'REJECTED')}
+                  >
+                    {pending ? <Spinner /> : null}
+                    Reject selected
+                  </Button>
+                  <Button
+                    variant="accent"
+                    size="sm"
+                    disabled={pending || selected.size === 0}
+                    onClick={() => decide(Array.from(selected), 'APPROVED')}
+                  >
+                    {pending ? <Spinner /> : null}
+                    Approve selected
+                  </Button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <p className="rounded-xl border border-border bg-background p-3 text-xs text-subtle">
+                You have read-only access to hostel requests. A warden with approval rights can
+                accept or reject them.
+              </p>
+            )}
 
-            {selected.size > 0 ? (
+            {canDecide && selected.size > 0 ? (
               <button
                 type="button"
                 onClick={() => setSelected(new Set())}

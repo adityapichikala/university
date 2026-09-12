@@ -152,6 +152,17 @@ export function HostelLeavePanel({ student, leaves }: Props) {
             />
           </dl>
 
+          {/* A stamp, because the first thing a gate guard looks for is whether
+              the slip was accepted at all. */}
+          {asHostelLeaveStatus(printing.status) === 'APPROVED' ? (
+            <p className="mt-6 inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-emerald-700">
+              <span className="material-symbols-outlined text-[16px] leading-none">
+                verified
+              </span>
+              Accepted by the warden
+            </p>
+          ) : null}
+
           <div className="mt-6 border-t border-slate-300 pt-4">
             <p className="text-xs font-semibold uppercase tracking-wide">Reason</p>
             <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{printing.reason}</p>
@@ -164,9 +175,37 @@ export function HostelLeavePanel({ student, leaves }: Props) {
             </div>
           ) : null}
 
-          <div className="mt-10 grid grid-cols-2 gap-10 text-xs">
-            <div className="border-t border-slate-400 pt-2">Student signature</div>
-            <div className="border-t border-slate-400 pt-2">Warden signature</div>
+          {/* ── Acceptance ──────────────────────────────────────────────────
+              The warden's approval is the authority for this slip, so it is
+              recorded here by name and date rather than left to a signature
+              line. A slip carries no handwriting to verify; it carries the
+              decision the system actually holds. */}
+          <div className="mt-6 rounded-lg border border-slate-300 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+              Acceptance
+            </p>
+            <div className="mt-2 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
+              <p>
+                <span className="text-xs uppercase tracking-wide text-slate-500">Status</span>{' '}
+                <span className="font-semibold">
+                  {asHostelLeaveStatus(printing.status) === 'APPROVED'
+                    ? 'Accepted'
+                    : HOSTEL_LEAVE_LABEL[asHostelLeaveStatus(printing.status)]}
+                </span>
+              </p>
+              {printing.decidedByName ? (
+                <p>
+                  <span className="text-xs uppercase tracking-wide text-slate-500">By</span>{' '}
+                  <span className="font-medium">{printing.decidedByName}</span>
+                </p>
+              ) : null}
+              {printing.decidedAt ? (
+                <p>
+                  <span className="text-xs uppercase tracking-wide text-slate-500">On</span>{' '}
+                  <span className="num font-medium">{printing.decidedAt}</span>
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <p className="mt-6 text-[11px] leading-relaxed text-slate-600">

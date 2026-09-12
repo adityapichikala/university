@@ -9,6 +9,8 @@ import {
   isApplicationStatus,
   asApplicationStatus,
   APPLICATION_STATUSES,
+  MIN_WITHDRAW_REASON,
+  MAX_WITHDRAW_REASON,
 } from '@/lib/phase4-query'
 
 /**
@@ -120,8 +122,46 @@ export async function applyToDrive(
       where: { driveId_studentId: { driveId: drive.id, studentId: ctx.user.id } },
       select: { id: true, status: true },
     })
+
     if (existing) {
-      return { ok: false, error: `You have already applied — ${existing.status.toLowerCase()}` }
+      const current = asApplicationStatus(existing.status)
+
+      // Re-applying after withdrawing is allowed, and is the whole reason the
+      // withdrawal reason is worth asking for: the row is revived, not
+      // recreated, so the unique constraint on (driveId, studentId) is
+      // satisfied and the student is not permanently locked out of a drive
+      // they are still eligible for.
+      //
+      // Both withdrawal fields are cleared rather than left behind. A row with
+      // status APPLIED and a non-null withdrawReason reads as withdrawn to
+      // anything that inspects the columns, and the reason is not lost — the
+      // withdrawal audit row carries it on the tamper-evident chain.
+      if (current === 'WITHDRAWN') {
+        await prisma.placementApplication.update({
+          where: { id: existing.id },
+          data: {
+            status: 'APPLIED',
+            withdrawReason: null,
+            withdrawnAt: null,
+          },
+        })
+
+        await audit({
+          ctx,
+          agentName: 'placement',
+          actionType: 'PLACEMENT_REAPPLY',
+          targetEntity: 'PlacementApplication',
+          entityId: existing.id,
+          before: { status: 'WITHDRAWN' },
+          after: { company: drive.companyName, role: drive.role, status: 'APPLIED' },
+        })
+
+        revalidatePath('/dashboard/student/placements')
+        revalidatePath('/dashboard/placement')
+        return { ok: true }
+      }
+
+      return { ok: false, error: `You have already applied — ${current.toLowerCase()}` }
     }
 
     const application = await prisma.placementApplication.create({
@@ -156,17 +196,34 @@ export async function applyToDrive(
 /**
  * Withdraw your own application.
  *
+ * A reason is required, not optional. Withdrawal is the one moment the student
+ * knows exactly why they are stepping back — asking then costs them ten seconds
+ * and is the difference between a placement cell that can act on attrition and
+ * one that can only count it. An optional field would collect almost nothing.
+ *
  * Tier 3: matched on `studentId === caller`, so nobody can pull someone else
  * out of a process. An offer (SELECTED) cannot be self-withdrawn — that has
  * to go through the placement office, which is a real rule, not a technical
  * limitation.
  */
-export async function withdrawApplication(
-  input: { applicationId: string }
-): Promise<PlacementActionResult> {
+export async function withdrawApplication(input: {
+  applicationId: string
+  reason: string
+}): Promise<PlacementActionResult> {
   const ctx = await requirePermission(PERMISSIONS.PLACEMENT_APPLY)
 
   if (!ctx.user.collegeId) return { ok: false, error: 'No college scope' }
+
+  const reason = (input.reason ?? '').trim()
+  if (reason.length < MIN_WITHDRAW_REASON) {
+    return {
+      ok: false,
+      error: `Please give a reason — at least ${MIN_WITHDRAW_REASON} characters`,
+    }
+  }
+  if (reason.length > MAX_WITHDRAW_REASON) {
+    return { ok: false, error: `That reason is too long (${MAX_WITHDRAW_REASON} max)` }
+  }
 
   try {
     const application = await prisma.placementApplication.findFirst({
@@ -198,7 +255,7 @@ export async function withdrawApplication(
 
     await prisma.placementApplication.update({
       where: { id: application.id },
-      data: { status: 'WITHDRAWN' },
+      data: { status: 'WITHDRAWN', withdrawReason: reason, withdrawnAt: new Date() },
     })
 
     await audit({
@@ -208,7 +265,11 @@ export async function withdrawApplication(
       targetEntity: 'PlacementApplication',
       entityId: application.id,
       before: { status },
-      after: { status: 'WITHDRAWN', company: application.drive.companyName },
+      after: {
+        status: 'WITHDRAWN',
+        company: application.drive.companyName,
+        reason,
+      },
     })
 
     revalidatePath('/dashboard/student/placements')

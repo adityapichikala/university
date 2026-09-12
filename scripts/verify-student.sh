@@ -9,7 +9,12 @@ BASE="${BASE:-http://localhost:3000}"
 export no_proxy='localhost,127.0.0.1' NO_PROXY='localhost,127.0.0.1'
 # Quoted: an unquoted * would be glob-expanded into filenames by the shell.
 CURL="curl --noproxy localhost,127.0.0.1"
+# curl here is a native Windows binary: it cannot write to a Git-Bash /tmp
+# path, and a silent write failure means an empty cookie jar and a 307 on
+# every authenticated request. Normalise to a mixed path (C:/...) that both
+# the shell and curl understand.
 TMP="$(mktemp -d)"
+if command -v cygpath >/dev/null 2>&1; then TMP="$(cygpath -m "$TMP")"; fi
 pass=0
 fail=0
 

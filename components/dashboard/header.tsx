@@ -55,6 +55,15 @@ export function Header({
     .slice(0, 2)
     .toUpperCase()
 
+  /**
+   * A student's identity is their registration number. Their role is a row the
+   * database resolved for them, not something they act on — so the chrome
+   * shows "STU001", never "STU001 · Student". Staff keep the label: for an HOD
+   * or an admin, "which role am I signed in as" is a real question when they
+   * hold more than one.
+   */
+  const showRole = user.role !== 'STUDENT'
+
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-surface/85 px-4 backdrop-blur-md lg:px-8">
       {/* ── Mobile navigation Sheet (Base UI Dialog) ─────────────────────────── */}
@@ -118,9 +127,11 @@ export function Header({
 
       <div className="min-w-0 flex-1">
         <h1 className="truncate font-heading text-base font-bold text-primary">Overview</h1>
-        <p className="font-mono text-[10px] uppercase tracking-wider text-subtle">
-          {ROLE_LABEL[user.role]}
-        </p>
+        {showRole ? (
+          <p className="font-mono text-[10px] uppercase tracking-wider text-subtle">
+            {ROLE_LABEL[user.role]}
+          </p>
+        ) : null}
       </div>
 
       {/* Search — decorative until global search ships */}
@@ -192,7 +203,8 @@ export function Header({
                 <p className="truncate text-sm font-semibold text-foreground">{user.name}</p>
                 <p className="truncate text-xs text-muted">{user.email}</p>
                 <p className="num mt-1 text-[10px] uppercase tracking-wider text-subtle">
-                  {user.regno} · {ROLE_LABEL[user.role]}
+                  {user.regno}
+                  {showRole ? <> · {ROLE_LABEL[user.role]}</> : null}
                 </p>
               </div>
               <div className="my-1 h-px bg-border" />

@@ -769,6 +769,10 @@ model PlacementDrive {
   eligibilityCriteria String
   driveDate           DateTime
   packageOffered      String
+  /// The job description, as text. Stored rather than linked: there is no file
+  /// store in this deployment, and a JD that 404s is worse than none. The
+  /// download endpoint renders it as a PDF (lib/export-utils.ts).
+  jobDescription      String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -776,16 +780,22 @@ model PlacementDrive {
   applications PlacementApplication[]
 
   @@index([collegeId])
+  @@index([driveDate])
 }
 
 model PlacementApplication {
-  id        String   @id @default(cuid())
-  collegeId String
-  driveId   String
-  studentId String
-  status    String   @default("APPLIED")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String    @id @default(cuid())
+  collegeId      String
+  driveId        String
+  studentId      String
+  status         String    @default("APPLIED")
+  /// Why the student withdrew. Asked for at withdrawal time: a reason captured
+  /// in the moment is worth more to the placement cell than a guess later, and
+  /// it is what turns "attrition" into something actionable.
+  withdrawReason String?
+  withdrawnAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   college College        @relation(fields: [collegeId], references: [id], onDelete: Cascade)
   drive   PlacementDrive @relation(fields: [driveId], references: [id], onDelete: Cascade)
@@ -793,6 +803,7 @@ model PlacementApplication {
 
   @@unique([driveId, studentId])
   @@index([collegeId])
+  @@index([status])
 }
 
 // ─── Notifications ──────────────────────────────────────────────────────────

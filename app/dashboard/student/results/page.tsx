@@ -95,7 +95,9 @@ export default async function StudentResultsPage({
         </p>
       </div>
 
-      {transcript ? <TranscriptPanel transcript={transcript} /> : null}
+      {transcript ? (
+        <TranscriptPanel transcript={transcript} highlightSemesterId={selectedSemesterId} />
+      ) : null}
 
       {/* Semester switcher. Links, not client state — the filter is shareable
           and survives a refresh. */}

@@ -97,6 +97,16 @@ export function applicationRank(value: unknown): number {
   return APPLICATION_RANK[asApplicationStatus(value)]
 }
 
+/**
+ * Withdrawal-reason bounds.
+ *
+ * Live here, not in `lib/placement-actions.ts`: that module is `'use server'`
+ * and may only export async functions, and the withdrawal form needs these to
+ * show the limit before the student types past it.
+ */
+export const MIN_WITHDRAW_REASON = 10
+export const MAX_WITHDRAW_REASON = 300
+
 export const APPLICATION_STATUS_STYLE: Record<
   ApplicationStatus,
   { label: string; chip: string }

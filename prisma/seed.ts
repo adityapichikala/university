@@ -191,6 +191,44 @@ async function main() {
         },
       })
     }
+
+    // ── Past-semester courses ──────────────────────────────────────────────────
+    // A transcript that only ever spans one semester cannot show a CGPA trend,
+    // and the semester-wise GPA table would collapse to a single row. These give
+    // the demo cohort a completed semester to weigh against the current one.
+    const pastCourseSpecs = [
+      { code: 'CS301', name: 'Object-Oriented Programming', credits: 4 },
+      { code: 'CS302', name: 'Discrete Mathematics', credits: 3 },
+    ]
+
+    for (const spec of pastCourseSpecs) {
+      const course = await prisma.course.upsert({
+        where: { collegeId_code: { collegeId: COLLEGE_ID, code: spec.code } },
+        update: { name: spec.name, credits: spec.credits },
+        create: {
+          code: spec.code,
+          name: spec.name,
+          credits: spec.credits,
+          collegeId: COLLEGE_ID,
+          departmentId: DEPARTMENT_ID,
+        },
+      })
+
+      // STU001 is enrolled above, before this block runs, so they are added here.
+      // The others pick these up from the shared `allCourses` roster below.
+      if (student) {
+        await prisma.courseEnrollment.upsert({
+          where: { studentId_courseId: { studentId: student.id, courseId: course.id } },
+          update: {},
+          create: {
+            collegeId: COLLEGE_ID,
+            studentId: student.id,
+            courseId: course.id,
+            classId: klass.id,
+          },
+        })
+      }
+    }
   }
 
   // ── Wave 2: attendance + exams ─────────────────────────────────────────────
@@ -639,17 +677,34 @@ async function main() {
   // Course.credits has been sitting unused since Wave 1. These published
   // results give the transcript something real to weigh.
   //
-  // STU001 works out by hand to:
-  //   CS501 (4cr) 82 + 91 → 86.5% → A+ →  9 → 36
-  //   CS502 (3cr) 68 + 74 → 71.0% → A  →  8 → 24
-  //   CS503 (3cr) 45      → 45.0% → C  →  5 → 15
-  //   Σ 75 / 10 credits = CGPA 7.5
+  // STU001 works out by hand to two semesters, so the CGPA is a real
+  // credit-weighted average rather than one semester restated:
+  //
+  //   Semester 3 — CS301 (4cr) 64 + 70 → 67.0% → B+ → 7 → 28
+  //                CS302 (3cr) 58      → 58.0% → B  → 6 → 18
+  //                Σ 46 /  7 credits = GPA 6.57
+  //
+  //   Semester 5 — CS501 (4cr) 82 + 91 → 86.5% → A+ → 9 → 36
+  //                CS502 (3cr) 68 + 74 → 71.0% → A  → 8 → 24
+  //                CS503 (3cr) 45      → 45.0% → C  → 5 → 15
+  //                Σ 75 / 10 credits = GPA 7.50
+  //
+  //   Overall    — Σ 121 / 17 credits = CGPA 7.12
+  //                (equal to the credit-weighted mean of 6.57 and 7.50,
+  //                 which is the identity the semester table must satisfy)
   const EXAM_SPECS = [
     { code: 'CS501', type: 'MIDTERM', date: '2026-08-15', maxMarks: 100 },
     { code: 'CS501', type: 'ENDTERM', date: '2026-09-05', maxMarks: 100 },
     { code: 'CS502', type: 'MIDTERM', date: '2026-08-18', maxMarks: 100 },
     { code: 'CS502', type: 'ENDTERM', date: '2026-09-08', maxMarks: 100 },
     { code: 'CS503', type: 'MIDTERM', date: '2026-08-20', maxMarks: 100 },
+
+    // Semester 3 — a completed semester, so the transcript has two of them and
+    // the CGPA is visibly a credit-weighted average rather than one semester's
+    // result restated. Dated in the past, and already published.
+    { code: 'CS301', type: 'MIDTERM', date: '2026-03-10', maxMarks: 100 },
+    { code: 'CS301', type: 'ENDTERM', date: '2026-04-28', maxMarks: 100 },
+    { code: 'CS302', type: 'ENDTERM', date: '2026-04-30', maxMarks: 100 },
   ]
 
   const RESULT_SPECS = [
@@ -659,16 +714,27 @@ async function main() {
     { regno: 'STU001', code: 'CS502', type: 'ENDTERM', marks: 74, publish: true },
     { regno: 'STU001', code: 'CS503', type: 'MIDTERM', marks: 45, publish: true },
 
+    // STU001's Semester 3, deliberately weaker than Semester 5 so the CGPA
+    // trend reads as an improvement:
+    //   CS301 (4cr) 64 + 70 → 67.0% → B+ → 7 → 28
+    //   CS302 (3cr) 58      → 58.0% → B  → 6 → 18
+    //   Σ 46 / 7 credits = GPA 6.57
+    { regno: 'STU001', code: 'CS301', type: 'MIDTERM', marks: 64, publish: true },
+    { regno: 'STU001', code: 'CS301', type: 'ENDTERM', marks: 70, publish: true },
+    { regno: 'STU001', code: 'CS302', type: 'ENDTERM', marks: 58, publish: true },
+
     // A second transcript so teacher/admin lookups have something to compare.
     { regno: 'STU002', code: 'CS501', type: 'MIDTERM', marks: 55, publish: true },
     { regno: 'STU002', code: 'CS501', type: 'ENDTERM', marks: 61, publish: true },
     { regno: 'STU002', code: 'CS502', type: 'MIDTERM', marks: 88, publish: true },
     // Deliberately NOT published — proves the transcript ignores unpublished work.
     { regno: 'STU002', code: 'CS502', type: 'ENDTERM', marks: 95, publish: false },
+    { regno: 'STU002', code: 'CS301', type: 'ENDTERM', marks: 77, publish: true },
 
     // A failing grade, to prove F credits stay in the CGPA denominator.
     { regno: 'STU003', code: 'CS501', type: 'MIDTERM', marks: 35, publish: true },
     { regno: 'STU003', code: 'CS502', type: 'MIDTERM', marks: 72, publish: true },
+    { regno: 'STU003', code: 'CS301', type: 'ENDTERM', marks: 41, publish: true },
   ]
 
   const examIds = new Map<string, string>()
@@ -1222,6 +1288,8 @@ async function main() {
     criteria: string
     inDays: number
     package: string
+    /** Rendered to a PDF by /api/placements/drives/[id]/jd. */
+    jd: string
     applicants: { regno: string; status: string }[]
   }[] = [
     {
@@ -1230,6 +1298,26 @@ async function main() {
       criteria: 'CGPA ≥ 7.0 · no active backlogs',
       inDays: 12,
       package: '₹12.5 LPA',
+      jd: [
+        'You will build and operate the batch and streaming pipelines that feed Northwind\'s',
+        'analytics products, working alongside analysts and product engineers.',
+        '',
+        'Responsibilities',
+        '· Design, build and maintain ETL/ELT pipelines over event and relational sources.',
+        '· Own data quality: schema contracts, freshness SLAs and alerting on drift.',
+        '· Model warehouse tables and keep them documented and discoverable.',
+        '· Partner with analysts to turn ad-hoc questions into durable datasets.',
+        '',
+        'Requirements',
+        '· Strong SQL and one of Python, Scala or Java.',
+        '· Understanding of partitioning, incremental loads and idempotent reprocessing.',
+        '· Exposure to a distributed engine (Spark, Flink or similar) through coursework or',
+        '  a project. We do not expect production experience.',
+        '',
+        'Selection process',
+        'Online assessment (90 minutes) · two technical interviews · one culture interview.',
+        'Offers are released within five working days of the final round.',
+      ].join('\n'),
       applicants: [
         { regno: 'STU001', status: 'SHORTLISTED' },
         { regno: 'STU002', status: 'APPLIED' },
@@ -1242,6 +1330,25 @@ async function main() {
       criteria: 'CGPA ≥ 6.5 · final year',
       inDays: 26,
       package: '₹9.8 LPA',
+      jd: [
+        'Cobalt builds developer tooling used by engineering teams to ship safely. You will',
+        'join a product team and own features end to end, from design through to on-call.',
+        '',
+        'What you will do',
+        '· Ship user-facing features across a TypeScript and Go stack.',
+        '· Write the tests that let the team deploy several times a day.',
+        '· Take part in design review and code review from your first week.',
+        '· Carry a share of on-call after a structured ramp-up.',
+        '',
+        'What we look for',
+        '· Comfort with at least one general-purpose language and a willingness to learn ours.',
+        '· Evidence of finishing something — a project, an internship, an open-source patch.',
+        '· Clear written communication: most of our design work happens in writing.',
+        '',
+        'Notes',
+        'The role is based in Bengaluru with a hybrid pattern of three days in office.',
+        'A six-month structured mentorship runs for every new graduate.',
+      ].join('\n'),
       applicants: [
         { regno: 'STU001', status: 'APPLIED' },
         { regno: 'STU004', status: 'APPLIED' },
@@ -1254,6 +1361,22 @@ async function main() {
       criteria: 'CGPA ≥ 6.0 · all branches',
       inDays: -8,
       package: '₹7.2 LPA',
+      jd: [
+        'The Technology Analyst programme rotates you through two teams in your first year,',
+        'covering core banking platforms and the digital channels that sit in front of them.',
+        '',
+        'Programme structure',
+        '· Months 1–3: structured training on the bank\'s platform and secure coding practice.',
+        '· Months 4–9: first rotation, typically core banking or payments.',
+        '· Months 10–12: second rotation, typically digital channels or data.',
+        '',
+        'Eligibility',
+        'Open to all branches. A background in financial systems is helpful but not required.',
+        '',
+        'Please note',
+        'This drive has closed. Applications received before the closing date are still being',
+        'processed and candidates will be contacted individually.',
+      ].join('\n'),
       applicants: [
         { regno: 'STU002', status: 'SELECTED' },
         { regno: 'STU003', status: 'SHORTLISTED' },
@@ -1269,10 +1392,51 @@ async function main() {
       criteria: 'CGPA ≥ 7.5 · ECE/CSE · 2027 batch',
       inDays: 34,
       package: '₹8.4 LPA',
+      jd: [
+        'Kestrel designs autonomous ground vehicles for warehouse logistics. Interns work on',
+        'the firmware and perception stack that runs on the vehicle itself.',
+        '',
+        'Scope of the internship',
+        '· Bring up and debug sensor drivers on an ARM Cortex-M target.',
+        '· Profile a control loop and reduce jitter under real load.',
+        '· Write host-side tooling to replay recorded runs in simulation.',
+        '',
+        'You should have',
+        '· Comfort with C and reading a datasheet.',
+        '· Some exposure to a microcontroller — a lab, a club project or a hobby build counts.',
+        '· Interest in the constraints of embedded work: limited memory, hard deadlines.',
+        '',
+        'Duration and conversion',
+        'Six months, with a strong preference for converting to a full-time offer at the end.',
+      ].join('\n'),
       applicants: [
         { regno: 'STU002', status: 'APPLIED' },
         { regno: 'STU004', status: 'APPLIED' },
       ],
+    },
+    {
+      // Proves the re-apply path end to end: STU001 withdrew from an OPEN drive,
+      // so the portal must offer "Apply again" rather than locking them out.
+      company: 'Halcyon Media',
+      role: 'Product Analyst',
+      criteria: 'CGPA ≥ 6.0 · any branch',
+      inDays: 18,
+      package: '₹8.0 LPA',
+      jd: [
+        'Halcyon runs subscription news products. As a Product Analyst you will be the person',
+        'who answers "what actually happened when we shipped that?" with data.',
+        '',
+        'Responsibilities',
+        '· Define and instrument the metrics behind a product decision.',
+        '· Run experiments, and be the one who calls a result when it is inconclusive.',
+        '· Build the dashboards that the product team lives in.',
+        '',
+        'Requirements',
+        '· SQL, and enough statistics to know when a difference is noise.',
+        '· Curiosity about why people behave the way they do.',
+        '· Any branch is welcome — we have analysts from six different degrees.',
+      ].join('\n'),
+      applicants: [{ regno: 'STU001', status: 'WITHDRAWN' }],
     },
   ]
 
@@ -1285,6 +1449,7 @@ async function main() {
         eligibilityCriteria: spec.criteria,
         driveDate: daysAgo(-spec.inDays),
         packageOffered: spec.package,
+        jobDescription: spec.jd,
       },
     })
     for (const applicant of spec.applicants) {
@@ -1300,6 +1465,16 @@ async function main() {
           studentId: student.id,
           status: applicant.status,
           createdAt: daysAgo(Math.max(1, -spec.inDays + 2)),
+          // A withdrawn row carries the reason it was withdrawn, exactly as the
+          // live withdrawal flow writes it — so the seeded state matches what
+          // the application produces rather than looking like a different code
+          // path made it.
+          ...(applicant.status === 'WITHDRAWN'
+            ? {
+                withdrawReason: 'Accepted an internship offer that overlaps this drive.',
+                withdrawnAt: daysAgo(3),
+              }
+            : {}),
         },
       })
     }
@@ -1498,10 +1673,39 @@ async function main() {
     if (courseToSemester.has(e.courseId)) continue
     courseToSemester.set(e.courseId, semesters.get(e.class?.semester ?? 4) ?? null)
   }
+
+  /**
+   * Explicit semester per seeded course, which wins over the derived value.
+   *
+   * The derivation below reads a course's semester off whichever section is
+   * enrolled first — non-deterministic once a course is shared, and plainly
+   * wrong for CS301/CS302: those are *past* courses, but their enrollments sit
+   * in a current section, so the derived answer would file them under the
+   * present semester and flatten the transcript back to one row.
+   */
+  const COURSE_SEMESTER: Record<string, number> = {
+    CS301: 3,
+    CS302: 3,
+    CS501: 5,
+    CS502: 5,
+    CS503: 5,
+  }
+  const courseCodeRows = await prisma.course.findMany({
+    where: { collegeId: COLLEGE_ID },
+    select: { id: true, code: true },
+  })
+  const codeByCourseId = new Map(courseCodeRows.map((c) => [c.id, c.code]))
+
   for (const exam of allExams) {
+    const code = codeByCourseId.get(exam.courseId)
+    const explicit = code ? COURSE_SEMESTER[code] : undefined
+    const target =
+      explicit !== undefined
+        ? semesters.get(explicit) ?? null
+        : courseToSemester.get(exam.courseId) ?? semesters.get(4) ?? null
     await prisma.exam.update({
       where: { id: exam.id },
-      data: { semesterId: courseToSemester.get(exam.courseId) ?? semesters.get(4) ?? null },
+      data: { semesterId: target },
     })
   }
 

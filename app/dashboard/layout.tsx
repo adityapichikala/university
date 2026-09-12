@@ -85,7 +85,12 @@ export default async function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar sections={sections} role={role} collegeName={college?.name} />
+      <Sidebar
+        sections={sections}
+        role={role}
+        regno={ctx.user.regno}
+        collegeName={college?.name}
+      />
 
       <div className="lg:pl-[264px]">
         <Header

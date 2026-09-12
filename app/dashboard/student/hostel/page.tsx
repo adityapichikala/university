@@ -34,6 +34,9 @@ export default async function StudentHostelPage() {
         reason: true,
         status: true,
         decisionNote: true,
+        decidedAt: true,
+        // Who accepted it — a slip with no name on it is not worth carrying.
+        decidedBy: { select: { name: true, regno: true } },
       },
       orderBy: [{ createdAt: 'desc' }],
       take: 50,
@@ -76,6 +79,8 @@ export default async function StudentHostelPage() {
       Math.round((l.toDate.getTime() - l.fromDate.getTime()) / 86_400_000)
     ),
     note: l.decisionNote,
+    decidedAt: l.decidedAt ? l.decidedAt.toISOString().slice(0, 10) : null,
+    decidedByName: l.decidedBy?.name ?? null,
   }))
 
   return (

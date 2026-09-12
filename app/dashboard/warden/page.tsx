@@ -132,7 +132,13 @@ export default async function WardenPage() {
         />
 
         <div className="mt-6">
-          <HostelLeaveQueue rows={leaveRows} />
+          <HostelLeaveQueue
+            rows={leaveRows}
+            // Passed rather than assumed: the queue adapts to the caller's real
+            // grant, so widening this page's guard later cannot leave dead
+            // decision controls on screen.
+            canDecide={ctx.can(PERMISSIONS.HOSTEL_MANAGE)}
+          />
         </div>
       </ToastProvider>
     </div>

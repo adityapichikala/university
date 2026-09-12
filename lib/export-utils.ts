@@ -174,6 +174,100 @@ export function pdfFile<T>(
   }
 }
 
+// ── Prose PDF ───────────────────────────────────────────────────────────────
+
+export interface TextPdfSection {
+  heading?: string
+  /** Free text. Blank lines separate paragraphs; long lines are wrapped. */
+  body: string
+}
+
+/**
+ * A single-page PDF of headings and wrapped prose.
+ *
+ * `toPdf` above lays out a table and is the wrong shape for a document like a
+ * job description. This wraps at a fixed character width — the base-14 fonts
+ * are proportional, so it is an approximation, but a JD that occasionally
+ * wraps a word early is fine where one that runs off the page is not.
+ */
+export function toTextPdf(
+  sections: TextPdfSection[],
+  options: { title: string; subtitle?: string; footer?: string }
+): string {
+  const usable = PDF_PAGE_W - MARGIN * 2
+  const ops: string[] = []
+  let y = PDF_PAGE_H - MARGIN
+
+  /** Emit one line of text at the current y, then advance. */
+  function emit(text: string, size: number, bold: boolean) {
+    if (y < MARGIN + LEADING) return
+    const font = bold ? 'F2' : 'F1'
+    ops.push(
+      'BT',
+      `/${font} ${size} Tf`,
+      `1 0 0 1 ${MARGIN} ${y.toFixed(2)} Tm`,
+      `(${escapePdf(text)}) Tj`,
+      'ET'
+    )
+    y -= LEADING
+  }
+
+  /** Greedy wrap to `size`-appropriate columns. */
+  function wrap(text: string, size: number): string[] {
+    const maxChars = Math.max(20, Math.floor(usable / (size * 0.5)))
+    const out: string[] = []
+    for (const paragraph of text.split('\n')) {
+      if (paragraph.trim() === '') {
+        out.push('')
+        continue
+      }
+      let line = ''
+      for (const word of paragraph.split(/\s+/)) {
+        if (line === '') {
+          line = word
+        } else if (`${line} ${word}`.length <= maxChars) {
+          line = `${line} ${word}`
+        } else {
+          out.push(line)
+          line = word
+        }
+      }
+      if (line) out.push(line)
+    }
+    return out
+  }
+
+  emit(options.title, 16, true)
+  if (options.subtitle) emit(options.subtitle, 9, false)
+  y -= 8
+
+  for (const section of sections) {
+    if (section.heading) {
+      y -= 4
+      emit(section.heading, 11, true)
+    }
+    for (const line of wrap(section.body, FONT_SIZE)) emit(line, FONT_SIZE, false)
+  }
+
+  if (options.footer) {
+    y -= 8
+    for (const line of wrap(options.footer, 8)) emit(line, 8, false)
+  }
+
+  return assemblePdf(ops.join('\n'))
+}
+
+export function textPdfFile(
+  sections: TextPdfSection[],
+  options: { title: string; subtitle?: string; footer?: string; basename: string }
+): CsvFile {
+  return {
+    body: toTextPdf(sections, options),
+    contentType: 'application/pdf',
+    filename: `${options.basename}-${stamp()}.pdf`,
+  }
+}
+
 /** Truncate to what fits, with an ellipsis marking the cut. */
 function fit(value: string, width: number): string {
   const max = Math.max(1, Math.floor(width / CHAR_W) - 1)

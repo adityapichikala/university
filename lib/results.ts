@@ -57,6 +57,85 @@ export interface Transcript {
   earnedCredits: number
   weightedPoints: number
   publishedResultCount: number
+  /**
+   * Credit-weighted GPA per semester, oldest first.
+   *
+   * The overall CGPA is not stored separately from these: it is exactly the
+   * credit-weighted mean of them, because Σ(credits × points) and Σ(credits)
+   * both distribute over the semester partition. Computing it once over all
+   * courses and once per semester therefore cannot disagree.
+   */
+  semesters: SemesterTranscript[]
+}
+
+export interface SemesterTranscript {
+  /** Null when a result's exam is not linked to a semester record. */
+  semesterId: string | null
+  semesterName: string
+  semesterNumber: number | null
+  /** Distinct courses graded in this semester. */
+  courseCount: number
+  attemptedCredits: number
+  earnedCredits: number
+  weightedPoints: number
+  /** Credit-weighted GPA for this semester alone (an "SGPA"). */
+  gpa: number
+  gpaDisplay: string
+}
+
+/** Bucket key for results whose exam is not linked to a semester record. */
+const UNASSIGNED_SEMESTER = '__unassigned__'
+
+/**
+ * Collapse a set of published results into one row per course.
+ *
+ * The schema has no exam weightings, so a course's published exams are
+ * averaged — see lib/grading.ts for that caveat. It takes a *subset* so the
+ * same logic serves both the whole transcript and a single semester; anything
+ * that differs between the two would make the semester GPAs fail to reconcile
+ * with the overall CGPA.
+ */
+function courseRowsFrom(
+  results: {
+    marksObtained: number
+    exam: { maxMarks: number; course: { id: string; code: string; name: string; credits: number } }
+  }[]
+): CourseTranscriptRow[] {
+  const byCourse = new Map<
+    string,
+    { code: string; name: string; credits: number; percentages: number[] }
+  >()
+
+  for (const r of results) {
+    const course = r.exam.course
+    const entry =
+      byCourse.get(course.id) ??
+      { code: course.code, name: course.name, credits: course.credits, percentages: [] }
+    entry.percentages.push(percentage(r.marksObtained, r.exam.maxMarks))
+    byCourse.set(course.id, entry)
+  }
+
+  return [...byCourse.entries()]
+    .map(([courseId, entry]) => {
+      const letter = letterForCoursePercentages(entry.percentages)
+      const gradePoint = gradePointFor(letter)
+      const credits = Math.max(entry.credits, 0)
+      const mean =
+        entry.percentages.reduce((sum, p) => sum + p, 0) / Math.max(entry.percentages.length, 1)
+      return {
+        courseId,
+        courseCode: entry.code,
+        courseName: entry.name,
+        credits,
+        examCount: entry.percentages.length,
+        averagePercentage: Math.round(mean * 10) / 10,
+        letter,
+        gradePoint,
+        weighted: Math.round(credits * gradePoint * 100) / 100,
+        passing: isPassingGrade(letter),
+      }
+    })
+    .sort((a, b) => a.courseCode.localeCompare(b.courseCode))
 }
 
 /**
@@ -125,6 +204,8 @@ export async function buildTranscript(
           examType: true,
           examDate: true,
           maxMarks: true,
+          semesterId: true,
+          semester: { select: { id: true, number: true, name: true } },
           course: { select: { id: true, code: true, name: true, credits: true } },
         },
       },
@@ -132,45 +213,46 @@ export async function buildTranscript(
     orderBy: { exam: { examDate: 'desc' } },
   })
 
-  // Group per course. The schema has no exam weightings, so a course's
-  // published exams are averaged — see lib/grading.ts for the caveat.
-  const byCourse = new Map<
-    string,
-    { code: string; name: string; credits: number; percentages: number[] }
-  >()
+  // Grouping runs twice — once over every result (the overall CGPA) and once
+  // per semester (the SGPA). Both go through the same helper, so a course can
+  // never be graded one way in the breakdown and another way in a semester row.
+  const courses = courseRowsFrom(results)
+  const totals: CgpaResult = computeCgpa(courses)
 
+  // ── Per-semester split ───────────────────────────────────────────────────
+  // Results whose exam carries no semester record still get a bucket, so
+  // credits never silently vanish from the semester table.
+  const bySemester = new Map<string, typeof results>()
   for (const r of results) {
-    const course = r.exam.course
-    const entry =
-      byCourse.get(course.id) ??
-      { code: course.code, name: course.name, credits: course.credits, percentages: [] }
-    entry.percentages.push(percentage(r.marksObtained, r.exam.maxMarks))
-    byCourse.set(course.id, entry)
+    const key = r.exam.semesterId ?? UNASSIGNED_SEMESTER
+    const list = bySemester.get(key)
+    if (list) list.push(r)
+    else bySemester.set(key, [r])
   }
 
-  const courses: CourseTranscriptRow[] = [...byCourse.entries()]
-    .map(([courseId, entry]) => {
-      const letter = letterForCoursePercentages(entry.percentages)
-      const gradePoint = gradePointFor(letter)
-      const credits = Math.max(entry.credits, 0)
-      const mean =
-        entry.percentages.reduce((sum, p) => sum + p, 0) / Math.max(entry.percentages.length, 1)
+  const semesters: SemesterTranscript[] = [...bySemester.entries()]
+    .map(([key, rows]) => {
+      const semesterCourses = courseRowsFrom(rows)
+      const semesterTotals = computeCgpa(semesterCourses)
+      const meta = rows[0]?.exam.semester ?? null
       return {
-        courseId,
-        courseCode: entry.code,
-        courseName: entry.name,
-        credits,
-        examCount: entry.percentages.length,
-        averagePercentage: Math.round(mean * 10) / 10,
-        letter,
-        gradePoint,
-        weighted: Math.round(credits * gradePoint * 100) / 100,
-        passing: isPassingGrade(letter),
+        semesterId: key === UNASSIGNED_SEMESTER ? null : key,
+        semesterName: meta?.name ?? 'Unassigned',
+        semesterNumber: meta?.number ?? null,
+        courseCount: semesterCourses.length,
+        attemptedCredits: semesterTotals.attemptedCredits,
+        earnedCredits: semesterTotals.earnedCredits,
+        weightedPoints: semesterTotals.weightedPoints,
+        gpa: semesterTotals.cgpa,
+        gpaDisplay: formatCgpa(semesterTotals.cgpa),
       }
     })
-    .sort((a, b) => a.courseCode.localeCompare(b.courseCode))
-
-  const totals: CgpaResult = computeCgpa(courses)
+    .sort((a, b) => {
+      // Numbered semesters in order; anything unassigned sorts last.
+      if (a.semesterNumber === null) return b.semesterNumber === null ? 0 : 1
+      if (b.semesterNumber === null) return -1
+      return a.semesterNumber - b.semesterNumber
+    })
 
   return {
     studentId: student.id,
@@ -193,5 +275,6 @@ export async function buildTranscript(
     earnedCredits: totals.earnedCredits,
     weightedPoints: totals.weightedPoints,
     publishedResultCount: results.length,
+    semesters,
   }
 }

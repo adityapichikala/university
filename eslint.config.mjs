@@ -7,7 +7,11 @@ const config = [
   ...coreWebVitals,
   ...typescript,
   {
-    ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'prisma/seed.ts'],
+    // Build output is never linted. The glob covers the default `.next` as well
+    // as any alternate dist dir from NEXT_DIST_DIR (see next.config.ts) and any
+    // `.next-bak-*` left behind by a failed build — linting generated bundles
+    // produces hundreds of phantom errors and buries real ones.
+    ignores: ['.next*/**', 'node_modules/**', 'next-env.d.ts', 'prisma/seed.ts'],
   },
 ]
 

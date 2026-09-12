@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
+import { Dialog } from '@base-ui/react/dialog'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { EmptyState, Spinner } from '@/components/ui/states'
@@ -11,6 +12,8 @@ import { applyToDrive, withdrawApplication } from '@/lib/placement-actions'
 import {
   APPLICATION_STATUS_STYLE,
   asApplicationStatus,
+  MAX_WITHDRAW_REASON,
+  MIN_WITHDRAW_REASON,
   type ApplicationStatus,
 } from '@/lib/phase4-query'
 import { cn } from '@/lib/utils'
@@ -21,6 +24,11 @@ import { cn } from '@/lib/utils'
  * Applying and withdrawing are sparse overrides on the server rows — the
  * status flips instantly and rolls back if the write is refused, so a second
  * attempt at a closed drive shows the real error rather than a stale button.
+ *
+ * Withdrawal asks for a reason before it commits. The server requires one too,
+ * so this dialog is the honest way to collect it rather than a validation
+ * afterthought — and a withdrawn drive stays actionable, because re-applying is
+ * allowed while the drive is still open.
  */
 
 interface Drive {
@@ -48,6 +56,17 @@ export function StudentPlacements({ drives, summary }: Props) {
   const [overrides, setOverrides] = React.useState<
     Record<string, { applicationId: string; status: ApplicationStatus } | null>
   >({})
+
+  // The drive being withdrawn from, plus the reason typed so far. Null when
+  // no dialog is open — so the dialog's state cannot outlive its trigger.
+  const [withdrawTarget, setWithdrawTarget] = React.useState<{
+    driveId: string
+    applicationId: string
+    companyName: string
+  } | null>(null)
+  const [reason, setReason] = React.useState('')
+
+  const reasonTooShort = reason.trim().length < MIN_WITHDRAW_REASON
 
   const rows = React.useMemo(
     () =>
@@ -92,11 +111,11 @@ export function StudentPlacements({ drives, summary }: Props) {
     router.refresh()
   }
 
-  async function withdraw(driveId: string, applicationId: string) {
+  async function withdraw(driveId: string, applicationId: string, why: string) {
     setBusyId(driveId)
     let result: { ok: boolean; error?: string }
     try {
-      result = await withdrawApplication({ applicationId })
+      result = await withdrawApplication({ applicationId, reason: why })
     } catch {
       result = { ok: false, error: 'Network error — nothing was changed' }
     }
@@ -108,6 +127,8 @@ export function StudentPlacements({ drives, summary }: Props) {
     }
 
     setOverrides((current) => ({ ...current, [driveId]: null }))
+    setWithdrawTarget(null)
+    setReason('')
     toast.success('Application withdrawn', 'You can apply again while the drive is open.')
     router.refresh()
   }
@@ -155,9 +176,15 @@ export function StudentPlacements({ drives, summary }: Props) {
               {ordered.map((d) => {
                 const status = d.status ? asApplicationStatus(d.status) : null
                 const style = status ? APPLICATION_STATUS_STYLE[status] : null
-                const canApply = !d.closed && !d.applicationId
+                // A withdrawn application is not a live one, so the drive is
+                // actionable again — that is the whole point of allowing a
+                // re-apply rather than treating WITHDRAWN as final.
+                const canApply = !d.closed && (!d.applicationId || status === 'WITHDRAWN')
                 const canWithdraw =
-                  d.applicationId && status !== 'SELECTED' && status !== 'REJECTED' && status !== 'WITHDRAWN'
+                  Boolean(d.applicationId) &&
+                  status !== 'SELECTED' &&
+                  status !== 'REJECTED' &&
+                  status !== 'WITHDRAWN'
 
                 return (
                   <li
@@ -167,6 +194,20 @@ export function StudentPlacements({ drives, summary }: Props) {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold text-foreground">{d.companyName}</p>
+                        {/* JD download — a real navigation so the browser saves
+                            the PDF rather than the router trying to render it. */}
+                        <a
+                          href={`/api/placements/drives/${d.id}/jd`}
+                          download
+                          title={`Download the job description for ${d.companyName}`}
+                          aria-label={`Download the job description for ${d.companyName}`}
+                          className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-surface px-1.5 text-[10px] font-medium text-muted transition-colors hover:border-border-strong hover:text-accent"
+                        >
+                          <span className="material-symbols-outlined text-[14px] leading-none">
+                            download
+                          </span>
+                          JD
+                        </a>
                         {style ? (
                           <span
                             className={cn(
@@ -200,14 +241,21 @@ export function StudentPlacements({ drives, summary }: Props) {
                           onClick={() => apply(d.id)}
                         >
                           {busyId === d.id ? <Spinner /> : null}
-                          Apply
+                          {status === 'WITHDRAWN' ? 'Apply again' : 'Apply'}
                         </Button>
                       ) : canWithdraw ? (
                         <Button
                           size="sm"
                           variant="ghost"
                           disabled={busyId === d.id}
-                          onClick={() => withdraw(d.id, d.applicationId as string)}
+                          onClick={() => {
+                            setReason('')
+                            setWithdrawTarget({
+                              driveId: d.id,
+                              applicationId: d.applicationId as string,
+                              companyName: d.companyName,
+                            })
+                          }}
                         >
                           {busyId === d.id ? <Spinner /> : null}
                           Withdraw
@@ -227,6 +275,86 @@ export function StudentPlacements({ drives, summary }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Withdraw: ask why, then commit ─────────────────────────────────── */}
+      <Dialog.Root
+        open={withdrawTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWithdrawTarget(null)
+            setReason('')
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Backdrop className="animate-fade fixed inset-0 z-40 bg-primary/40" />
+          <Dialog.Popup className="animate-fade fixed left-1/2 top-1/2 z-50 w-[min(92vw,28rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-6 shadow-lift focus:outline-none">
+            <Dialog.Title className="font-heading text-base font-semibold text-foreground">
+              Withdraw application
+            </Dialog.Title>
+            <p className="mt-1 text-sm text-muted">
+              Withdrawing from{' '}
+              <span className="font-medium text-foreground">{withdrawTarget?.companyName}</span>.
+              The placement office sees your reason, and you can apply again while the drive is
+              still open.
+            </p>
+
+            <form
+              className="mt-4"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (!withdrawTarget || reasonTooShort) return
+                void withdraw(withdrawTarget.driveId, withdrawTarget.applicationId, reason)
+              }}
+            >
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-muted">
+                  Why are you withdrawing?{' '}
+                  <span className="text-subtle">(min {MIN_WITHDRAW_REASON} characters)</span>
+                </span>
+                <textarea
+                  autoFocus
+                  rows={3}
+                  value={reason}
+                  maxLength={MAX_WITHDRAW_REASON}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="e.g. Accepted an offer elsewhere; the role no longer matches my specialisation."
+                  className={cn(
+                    'w-full rounded-xl border border-border-strong bg-surface px-3.5 py-2.5 text-sm text-foreground',
+                    'placeholder:text-subtle',
+                    'transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20'
+                  )}
+                />
+              </label>
+
+              <div className="mt-1.5 flex items-center justify-between text-[11px] text-subtle">
+                <span>
+                  {reasonTooShort
+                    ? `${Math.max(0, MIN_WITHDRAW_REASON - reason.trim().length)} more character(s) needed`
+                    : 'Ready to submit'}
+                </span>
+                <span className="num">
+                  {reason.trim().length}/{MAX_WITHDRAW_REASON}
+                </span>
+              </div>
+
+              <div className="mt-5 flex justify-end gap-2">
+                <Dialog.Close className="inline-flex h-10 items-center rounded-xl border border-border-strong bg-surface px-4 text-sm font-medium text-foreground transition-colors hover:bg-background">
+                  Keep application
+                </Dialog.Close>
+                <Button
+                  type="submit"
+                  variant="danger"
+                  disabled={reasonTooShort || busyId !== null}
+                >
+                  {busyId !== null ? <Spinner /> : null}
+                  Withdraw
+                </Button>
+              </div>
+            </form>
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   )
 }
