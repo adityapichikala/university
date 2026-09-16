@@ -59,26 +59,36 @@ export interface AuditLogPage {
 const PAGE_SIZE = 25
 
 function buildWhere(filters: AuditLogFilters) {
-  const where: Record<string, unknown> = {}
+  const andConditions: Record<string, unknown>[] = []
 
-  if (filters.collegeId) where.collegeId = filters.collegeId
-  if (filters.actionType) where.actionType = filters.actionType
-  if (filters.status) where.status = filters.status
-  if (filters.actorId) where.approvedByUserId = filters.actorId
+  if (filters.collegeId) {
+    andConditions.push({
+      OR: [
+        { collegeId: filters.collegeId },
+        { collegeId: null, actionType: 'SYSTEM_CRASH' }
+      ]
+    })
+  }
+
+  if (filters.actionType) andConditions.push({ actionType: filters.actionType })
+  if (filters.status) andConditions.push({ status: filters.status })
+  if (filters.actorId) andConditions.push({ approvedByUserId: filters.actorId })
 
   if (filters.from || filters.to) {
     const timestamp: Record<string, Date> = {}
     if (filters.from) timestamp.gte = filters.from
     if (filters.to) timestamp.lte = filters.to
-    where.timestamp = timestamp
+    andConditions.push({ timestamp })
   }
 
   if (filters.q?.trim()) {
     const q = filters.q.trim()
-    where.OR = [{ targetEntity: { contains: q } }, { details: { contains: q } }]
+    andConditions.push({
+      OR: [{ targetEntity: { contains: q } }, { details: { contains: q } }]
+    })
   }
 
-  return where
+  return andConditions.length > 0 ? { AND: andConditions } : {}
 }
 
 function parseDetails(raw: string | null): AuditLogRow['details'] {
@@ -177,8 +187,7 @@ export async function listAuditActors(
 export async function auditStatusCounts(
   filters: AuditLogFilters
 ): Promise<Record<string, number>> {
-  const base = buildWhere(filters)
-  delete base.status
+  const base = buildWhere({ ...filters, status: undefined })
 
   const rows = await prisma.agentActionLog.groupBy({
     by: ['status'],

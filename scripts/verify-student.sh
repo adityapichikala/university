@@ -137,18 +137,18 @@ r=$(action "$STU1" /dashboard/student/placements "$APPLY" "{\"driveId\":\"drv_do
 echo "$r" | grep -q 'not found' && ok "unknown drive id refused" || bad "unknown drive: $r"
 
 # withdraw someone else's application → must not be found
-r=$(action "$STU2" /dashboard/student/placements "$WITHDRAW" "{\"applicationId\":\"${APPID%% *}\"}")
+r=$(action "$STU2" /dashboard/student/placements "$WITHDRAW" "{\"applicationId\":\"${APPID%% *}\",\"reason\":\"not interested anymore\"}")
 echo "$r" | grep -q 'not found' && ok "STU002 cannot withdraw STU001's application" || bad "cross-student withdraw: $r"
 
 # withdraw own
-r=$(action "$STU1" /dashboard/student/placements "$WITHDRAW" "{\"applicationId\":\"${APPID%% *}\"}")
+r=$(action "$STU1" /dashboard/student/placements "$WITHDRAW" "{\"applicationId\":\"${APPID%% *}\",\"reason\":\"not interested anymore\"}")
 echo "$r" | grep -q '"ok":true' && ok "withdraw own application accepted" || bad "withdraw: $r"
 
 STATUS=$(node -e "const{PrismaClient}=require('@prisma/client');const p=new PrismaClient();p.placementApplication.findUnique({where:{id:'${APPID%% *}'},select:{status:true}}).then(a=>{console.log(a.status);return p.\$disconnect()})")
 [ "$STATUS" = "WITHDRAWN" ] && ok "status now WITHDRAWN" || bad "status is $STATUS"
 
 # double withdraw
-r=$(action "$STU1" /dashboard/student/placements "$WITHDRAW" "{\"applicationId\":\"${APPID%% *}\"}")
+r=$(action "$STU1" /dashboard/student/placements "$WITHDRAW" "{\"applicationId\":\"${APPID%% *}\",\"reason\":\"not interested anymore\"}")
 echo "$r" | grep -q 'Already withdrawn' && ok "double withdraw refused" || bad "double withdraw: $r"
 
 ########################################################################
