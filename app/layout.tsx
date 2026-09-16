@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Plus_Jakarta_Sans, Manrope, JetBrains_Mono } from 'next/font/google'
+import { PwaRegistration } from '@/components/PwaRegistration'
 import './globals.css'
 
 // Design-system typefaces, self-hosted by Next (no runtime request to Google).
@@ -27,6 +28,7 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'Apex University ERP',
   description: 'Unified campus management platform',
+  manifest: '/manifest.json',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -45,6 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen bg-background font-body text-foreground antialiased">
         {children}
+        <PwaRegistration />
       </body>
     </html>
   )

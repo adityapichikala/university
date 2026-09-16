@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Image from 'next/image'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -264,9 +265,12 @@ export function HostelLeavePanel({ student, leaves }: Props) {
             </p>
             <div className="text-center">
               {qrUrl ? (
-                <img
+                <Image
                   src={qrUrl}
                   alt="Verification QR"
+                  width={112}
+                  height={112}
+                  unoptimized
                   className="mx-auto h-28 w-28"
                 />
               ) : (

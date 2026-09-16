@@ -9,6 +9,7 @@ import {
   otpExpiryFrom,
 } from '@/lib/password-reset'
 import { resetPasswordEmail, sendMail } from '@/lib/mailer'
+import { checkRateLimit, getIp } from '@/lib/rate-limit'
 
 /**
  * POST /api/auth/forgot-password — step 1: issue a reset code.
@@ -29,6 +30,12 @@ export async function POST(req: Request) {
 
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request payload' }, { status: 400 })
+  }
+
+  const ip = getIp(req)
+  // Max 3 forgot-password attempts per IP per minute
+  if (checkRateLimit(ip, 3, 60_000)) {
+    return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 })
   }
 
   const regno = parsed.data.regno.toUpperCase()

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { getDashboardPath } from '@/lib/roles'
+import { checkRateLimit, getIp } from '@/lib/rate-limit'
 
 const loginSchema = z.object({
   regno: z.string().trim().min(1, 'Registration number is required').max(64),
@@ -17,6 +18,12 @@ export async function POST(req: Request) {
 
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request payload' }, { status: 400 })
+  }
+
+  const ip = getIp(req)
+  // Max 5 attempts per IP per minute
+  if (checkRateLimit(ip, 5, 60_000)) {
+    return NextResponse.json({ error: 'Too many login attempts. Please try again later.' }, { status: 429 })
   }
 
   const regno = parsed.data.regno.toUpperCase()
