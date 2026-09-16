@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { EmptyState } from '@/components/ui/states'
 import { LeaveQueue } from '@/components/dashboard/leave-queue'
 import { KpiCard } from '@/components/dashboard/kpi-card'
-import { cn } from '@/lib/utils'
 
 /**
  * The HOD portal.

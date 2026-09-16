@@ -228,6 +228,10 @@ export function UsersClient({
         },
       },
     ],
+    // `deactivate` and `updateUser` only close over stable state setters and
+    // `router` — omitting them is intentional to prevent every render from
+    // rebuilding the entire column definition array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [busy, currentUserId, selectedId]
   )
 
@@ -450,7 +454,6 @@ export function UsersClient({
  * next/link would make React try to render the CSV response as a page. Hence a
  * plain anchor, wrapped once here so the lint exemption has exactly one home.
  */
-// eslint-disable-next-line @next/next/no-html-link-for-pages
 function DownloadLink({ href, icon, label }: { href: string; icon: string; label: string }) {
   return (
     <a

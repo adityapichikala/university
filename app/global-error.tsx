@@ -137,7 +137,6 @@ export default function GlobalError({ error, reset }: Props) {
 
             {/* A hard navigation, not next/link: this boundary replaces the
                 root layout, and client-side routing is exactly what is broken. */}
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href={dashboardHref}
               style={{

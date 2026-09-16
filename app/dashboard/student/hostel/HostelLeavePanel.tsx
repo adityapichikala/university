@@ -118,6 +118,11 @@ export function HostelLeavePanel({ student, leaves }: Props) {
 
   React.useEffect(() => {
     if (!printId) {
+      // Deliberately clear the QR URL when the print view is closed.
+      // This is a derived-state reset (qrUrl mirrors printId's lifecycle),
+      // not a cascading side-effect — suppresssing the React Compiler lint
+      // because the alternative (a separate effect) is less readable here.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQrUrl(null)
       return
     }
