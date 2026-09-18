@@ -69,6 +69,7 @@ export function getNav(role: Role): NavSection[] {
               href: `/dashboard/${slug}/announcements`,
             },
             { label: 'Placements', icon: 'work', href: `/dashboard/${slug}/placements` },
+            { label: 'Clearance', icon: 'fact_check', href: `/dashboard/${slug}/clearance` },
           ],
         },
       ]
@@ -110,6 +111,7 @@ export function getNav(role: Role): NavSection[] {
             { label: 'Faculty', icon: 'groups', href: `/dashboard/${slug}#faculty` },
             { label: 'Courses', icon: 'menu_book', href: `/dashboard/${slug}#courses` },
             { label: 'Leave Approvals', icon: 'task_alt', href: `/dashboard/${slug}#leave` },
+            { label: 'Clearance', icon: 'fact_check', href: `/dashboard/${slug}/clearance` },
           ],
         },
         selfService(),
@@ -125,6 +127,7 @@ export function getNav(role: Role): NavSection[] {
             { label: 'Academics', icon: 'menu_book', href: `/dashboard/${slug}/academics` },
             { label: 'Departments', icon: 'account_tree', href: `/dashboard/${slug}/departments` },
             { label: 'Admissions', icon: 'how_to_reg', href: `/dashboard/${slug}/admissions` },
+            { label: 'Clearance', icon: 'fact_check', href: `/dashboard/${slug}/clearance` },
           ],
         },
         {
@@ -162,6 +165,7 @@ export function getNav(role: Role): NavSection[] {
           title: 'Finance',
           items: [
             { label: 'Fee Desk', icon: 'payments', href: `/dashboard/${slug}` },
+            { label: 'Clearance', icon: 'fact_check', href: `/dashboard/${slug}/clearance` },
             soon('Reports', 'insights'),
           ],
         },
@@ -175,6 +179,7 @@ export function getNav(role: Role): NavSection[] {
           title: 'Library',
           items: [
             { label: 'Circulation Desk', icon: 'swap_horiz', href: `/dashboard/${slug}` },
+            { label: 'Clearance', icon: 'fact_check', href: `/dashboard/${slug}/clearance` },
             soon('Catalog Import', 'auto_stories'),
           ],
         },
@@ -188,6 +193,7 @@ export function getNav(role: Role): NavSection[] {
           title: 'Hostel',
           items: [
             { label: 'Rooms & Beds', icon: 'bed', href: `/dashboard/${slug}` },
+            { label: 'Clearance', icon: 'fact_check', href: `/dashboard/${slug}/clearance` },
             soon('Maintenance', 'build'),
           ],
         },

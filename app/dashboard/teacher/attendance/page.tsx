@@ -1,7 +1,10 @@
+import Link from 'next/link'
 import { prisma } from '@/lib/db'
 import { requirePermission, scopes } from '@/lib/rbac'
 import { PERMISSIONS } from '@/lib/roles'
 import { toDayKey } from '@/lib/academics'
+import { ToastProvider } from '@/components/ui/toast'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { AttendanceClient } from './AttendanceClient'
 
 export const metadata = { title: 'Attendance · Apex University ERP' }
@@ -27,7 +30,7 @@ export default async function TeacherAttendancePage({
     orderBy: { code: 'asc' },
   })
 
-  const selectedCourseId = sp.courseId ?? courses[0]?.id ?? ''
+  const selectedCourseId = sp.courseId ?? ''
   const dateKey = sp.date ?? toDayKey(new Date())
   const day = new Date(`${dateKey}T00:00:00.000Z`)
 
@@ -61,6 +64,17 @@ export default async function TeacherAttendancePage({
       })
     : []
 
+  // If viewing the grid, figure out which courses are already marked for this date.
+  const markedCourseIds = !selectedCourseId
+    ? (
+        await prisma.attendance.findMany({
+          where: { courseId: { in: courses.map((c) => c.id) }, date: day, ...scopes.college(ctx) },
+          select: { courseId: true },
+          distinct: ['courseId'],
+        })
+      ).map((a) => a.courseId)
+    : []
+
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-6">
@@ -78,23 +92,51 @@ export default async function TeacherAttendancePage({
             You have no courses assigned yet, so there is no one to mark.
           </p>
         </div>
+      ) : !selectedCourseId ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {courses.map((course) => {
+            const isMarked = markedCourseIds.includes(course.id)
+            return (
+              <Link key={course.id} href={`/dashboard/teacher/attendance?courseId=${course.id}&date=${dateKey}`}>
+                <Card className="h-full hover:border-accent transition-colors">
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-3">
+                      <CardTitle className="text-lg">{course.name}</CardTitle>
+                      {isMarked && (
+                        <span className="shrink-0 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-success">
+                          Marked
+                        </span>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted">{course.code}</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            )
+          })}
+        </div>
       ) : (
-        <AttendanceClient
-          courses={courses}
-          initialCourseId={selectedCourseId}
-          initialDate={dateKey}
-          roster={roster.map((r) => ({
-            id: r.student.id,
-            regno: r.student.regno,
-            name: r.student.name,
-            rollNo: r.student.rollNo,
-            section: r.student.class?.name ?? null,
-          }))}
-          initialMarks={existing.map((e) => ({
-            studentId: e.studentId,
-            status: e.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
-          }))}
-        />
+        <ToastProvider>
+          <AttendanceClient
+            key={`${selectedCourseId}-${dateKey}`}
+            courses={courses}
+            initialCourseId={selectedCourseId}
+            initialDate={dateKey}
+            roster={roster.map((r) => ({
+              id: r.student.id,
+              regno: r.student.regno,
+              name: r.student.name,
+              rollNo: r.student.rollNo,
+              section: r.student.class?.name ?? null,
+            }))}
+            initialMarks={existing.map((e) => ({
+              studentId: e.studentId,
+              status: e.status as 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED',
+            }))}
+          />
+        </ToastProvider>
       )}
     </div>
   )

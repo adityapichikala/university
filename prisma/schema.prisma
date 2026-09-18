@@ -68,6 +68,7 @@ model College {
   certificates          Certificate[]
   parentLinks           ParentChild[]
   agentActionLogs       AgentActionLog[]
+  clearances            Clearance[]
 }
 
 model Department {
@@ -132,6 +133,8 @@ model User {
   libraryIssues         LibraryIssue[]
   hostelAllocations     HostelAllocation[]
   hostelLeaves          HostelLeave[]
+  clearances            Clearance[] @relation("ClearanceStudent")
+  clearancesDecided     Clearance[] @relation("ClearanceDecidedBy")
   placementApplications PlacementApplication[]
   certificates          Certificate[]
 
@@ -885,6 +888,41 @@ model ParentChild {
 
   @@unique([parentId, studentId])
   @@index([studentId])
+}
+
+// ─── No-Dues clearance (graduating students) ─────────────────────────────────
+//
+// Four departments sign off a student before they graduate: LIBRARY, HOSTEL,
+// FINANCE, ACADEMICS. The *effective* status is auto-derived from the
+// operational tables (open fee records, un-returned books, outstanding
+// backlogs, an un-vacated room) unless a department head has recorded a manual
+// decision that overrides it. One row per (student, department); `manualStatus`
+// null means "trust the auto check".
+
+model Clearance {
+  id              String    @id @default(cuid())
+  collegeId       String
+  studentId       String
+  /// LIBRARY | HOSTEL | FINANCE | ACADEMICS — kept in sync with lib/clearance.ts.
+  department      String
+  /// Manual decision: 'CLEARED' or 'PENDING'. Null = fall back to the auto status.
+  manualStatus    String?
+  /// Who recorded the manual decision. Null once a row is cleared back to auto.
+  decidedByUserId String?
+  decidedAt       DateTime?
+  /// Free-text reason, shown to the student. Optional.
+  note            String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  college   College @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  student   User    @relation("ClearanceStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  decidedBy User?   @relation("ClearanceDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  /// A student can hold exactly one decision per department.
+  @@unique([studentId, department])
+  @@index([collegeId])
+  @@index([department])
 }
 
 // ─── Certificates ───────────────────────────────────────────────────────────

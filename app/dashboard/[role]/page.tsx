@@ -35,6 +35,8 @@ export default async function RoleDashboardPage({
 
   const firstName = ctx.user.name.split(' ')[0]
   const isStudent = role === 'STUDENT'
+  const isTeacher = role === 'TEACHER'
+  const isStudentOrTeacher = isStudent || isTeacher
   // Only staff pay for this — a student never renders the permission surface.
   const permissions = isStudent ? [] : Array.from(ctx.permissions).sort()
 
@@ -42,9 +44,13 @@ export default async function RoleDashboardPage({
   // preview (max three entries) — the full week lives on the timetable page.
   const today = new Date()
   const todaySlots =
-    isStudent && ctx.user.classId
+    (isStudent && ctx.user.classId) || isTeacher
       ? await prisma.timetableSlot.findMany({
-          where: { classId: ctx.user.classId, dayOfWeek: today.getDay() },
+          where: {
+            ...(isStudent ? { classId: ctx.user.classId! } : {}),
+            ...(isTeacher ? { course: { teacherId: ctx.user.id } } : {}),
+            dayOfWeek: today.getDay(),
+          },
           select: {
             id: true,
             startTime: true,
@@ -53,6 +59,7 @@ export default async function RoleDashboardPage({
             course: {
               select: { code: true, name: true, teacher: { select: { name: true } } },
             },
+            class: { select: { name: true } },
           },
           orderBy: { startTime: 'asc' },
         })
@@ -100,7 +107,7 @@ export default async function RoleDashboardPage({
   const staffStats = [
     { label: 'Role', value: ROLE_LABEL[role] },
     { label: 'Status', value: ctx.user.status },
-    { label: 'Permissions', value: String(permissions.length) },
+    ...(isTeacher ? [] : [{ label: 'Permissions', value: String(permissions.length) }]),
   ]
 
   const stats = isStudent ? studentStats : staffStats
@@ -119,7 +126,7 @@ export default async function RoleDashboardPage({
         </p>
       </div>
 
-      {isStudent ? (
+      {isStudentOrTeacher ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader>
@@ -134,7 +141,7 @@ export default async function RoleDashboardPage({
                   </p>
                 </div>
                 <Link
-                  href="/dashboard/student/timetable"
+                  href={`/dashboard/${slug}/timetable`}
                   className="shrink-0 text-xs font-medium text-accent hover:underline"
                 >
                   Full timetable
@@ -156,7 +163,9 @@ export default async function RoleDashboardPage({
                           <span className="text-muted">{slot.course.name}</span>
                         </p>
                         <p className="mt-0.5 text-xs text-subtle">
-                          {slot.course.teacher?.name ?? 'Unassigned'} · {slot.room}
+                          {isStudent 
+                            ? (slot.course.teacher?.name ?? 'Unassigned') 
+                            : (slot.class?.name ?? 'Unknown Class')} · {slot.room}
                         </p>
                       </div>
                       <span className="num shrink-0 rounded-lg bg-background px-2 py-1 text-xs text-muted">
@@ -237,9 +246,9 @@ export default async function RoleDashboardPage({
         ))}
       </div>
 
-      {/* Governance surface — staff only. A student has no permissions to
+      {/* Governance surface — staff only. A student/teacher has no permissions to
           review, so rendering an empty card would be noise at best. */}
-      {isStudent ? null : (
+      {isStudentOrTeacher ? null : (
         <Card>
           <CardHeader>
             <CardTitle>Effective permissions</CardTitle>
@@ -266,7 +275,7 @@ export default async function RoleDashboardPage({
         </Card>
       )}
 
-      {isStudent ? null : (
+      {isStudentOrTeacher ? null : (
         <p className="text-xs text-subtle">
           Phase 0 foundation is in place — auth, role routing and permissions. Module screens land
           in Phase 1.

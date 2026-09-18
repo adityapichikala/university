@@ -1,17 +1,17 @@
 ▲ Next.js 16.3.5 (Turbopack)
 - Environments: .env
-✓ Running next.config.ts took 32ms
+✓ Running next.config.ts took 85ms
 
   Creating an optimized production build ...
-✓ Compiled successfully in 2.5s
+✓ Compiled successfully in 21.1s
   Running TypeScript ...
-  Finished TypeScript in 18.3s ...
+  Finished TypeScript in 27.8s ...
   Collecting page data using 21 workers ...
-  Generating static pages using 21 workers (0/63) ...
-  Generating static pages using 21 workers (15/63) 
-  Generating static pages using 21 workers (31/63) 
-  Generating static pages using 21 workers (47/63) 
-✓ Generating static pages using 21 workers (63/63) in 393ms
+  Generating static pages using 21 workers (0/67) ...
+  Generating static pages using 21 workers (16/67) 
+  Generating static pages using 21 workers (33/67) 
+  Generating static pages using 21 workers (50/67) 
+✓ Generating static pages using 21 workers (67/67) in 1660ms
   Finalizing page optimization ...
 
 Route (app)
@@ -38,6 +38,7 @@ Route (app)
 ├ ƒ /api/classes/[id]
 ├ ƒ /api/courses
 ├ ƒ /api/courses/[id]
+├ ƒ /api/debug/perm
 ├ ƒ /api/enrollments
 ├ ƒ /api/enrollments/[id]
 ├ ƒ /api/exams
@@ -57,6 +58,7 @@ Route (app)
 ├ ƒ /api/library/items/[id]
 ├ ƒ /api/placements/drives/[id]/jd
 ├ ƒ /api/results/summary
+├ ƒ /api/student/clearance
 ├ ƒ /api/submissions/[id]
 ├ ƒ /api/telemetry/crash
 ├ ƒ /api/timetable
@@ -67,6 +69,7 @@ Route (app)
 ├ ƒ /dashboard/admin/academics
 ├ ƒ /dashboard/admin/admissions
 ├ ƒ /dashboard/admin/audit
+├ ƒ /dashboard/admin/clearance
 ├ ƒ /dashboard/admin/departments
 ├ ƒ /dashboard/admin/users
 ├ ƒ /dashboard/finance
@@ -81,6 +84,7 @@ Route (app)
 ├ ƒ /dashboard/student/assignments
 ├ ƒ /dashboard/student/attendance
 ├ ƒ /dashboard/student/calendar
+├ ƒ /dashboard/student/clearance
 ├ ƒ /dashboard/student/courses
 ├ ƒ /dashboard/student/fees
 ├ ƒ /dashboard/student/hostel

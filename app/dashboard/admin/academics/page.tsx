@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { requirePermission, scopes } from '@/lib/rbac'
 import { PERMISSIONS } from '@/lib/roles'
+import { ToastProvider } from '@/components/ui/toast'
 import { AcademicsClient } from './AcademicsClient'
 
 export const metadata = { title: 'Academics · Apex University ERP' }
@@ -85,16 +86,18 @@ export default async function AdminAcademicsPage() {
         </p>
       </div>
 
-      <AcademicsClient
-        canManageClasses={ctx.can(PERMISSIONS.CLASS_MANAGE)}
-        canManageEnrollments={ctx.can(PERMISSIONS.ENROLLMENT_MANAGE)}
-        initialCourses={courses}
-        initialClasses={classes}
-        initialEnrollments={enrollments}
-        departments={departments}
-        teachers={teachers}
-        students={students}
-      />
+      <ToastProvider>
+        <AcademicsClient
+          canManageClasses={ctx.can(PERMISSIONS.CLASS_MANAGE)}
+          canManageEnrollments={ctx.can(PERMISSIONS.ENROLLMENT_MANAGE)}
+          initialCourses={courses}
+          initialClasses={classes}
+          initialEnrollments={enrollments}
+          departments={departments}
+          teachers={teachers}
+          students={students}
+        />
+      </ToastProvider>
     </div>
   )
 }

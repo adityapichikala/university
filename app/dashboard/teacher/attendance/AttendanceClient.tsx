@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { ATTENDANCE_STATUSES, type AttendanceStatus } from '@/lib/academics'
 import { Button } from '@/components/ui/button'
@@ -49,14 +51,15 @@ export function AttendanceClient({
   initialMarks,
 }: Props) {
   const router = useRouter()
-  const [courseId, setCourseId] = useState(initialCourseId)
+  const toast = useToast()
+  
+  const course = courses.find((c) => c.id === initialCourseId)
   const [date, setDate] = useState(initialDate)
   const [marks, setMarks] = useState<Record<string, AttendanceStatus>>(() =>
     Object.fromEntries(initialMarks.map((m) => [m.studentId, m.status]))
   )
-  const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [readOnly, setReadOnly] = useState(initialMarks.length > 0)
 
   const credited = useMemo(
     () => roster.filter((s) => marks[s.id] && CREDITED.includes(marks[s.id])).length,
@@ -68,30 +71,18 @@ export function AttendanceClient({
     setMarks(Object.fromEntries(roster.map((s) => [s.id, status])))
   }
 
-  function switchCourse(nextCourseId: string) {
-    setCourseId(nextCourseId)
-    setMessage(null)
-    setError(null)
-    router.push(`/dashboard/teacher/attendance?courseId=${nextCourseId}&date=${date}`)
-  }
-
   function switchDate(nextDate: string) {
     setDate(nextDate)
-    setMessage(null)
-    setError(null)
-    router.push(`/dashboard/teacher/attendance?courseId=${courseId}&date=${nextDate}`)
+    router.push(`/dashboard/teacher/attendance?courseId=${initialCourseId}&date=${nextDate}`)
   }
 
   async function submit() {
-    setError(null)
-    setMessage(null)
-
     const payload = roster
       .filter((s) => marks[s.id])
       .map((s) => ({ studentId: s.id, status: marks[s.id] }))
 
     if (payload.length === 0) {
-      setError('Mark at least one student before saving.')
+      toast.error('Mark at least one student before saving.')
       return
     }
 
@@ -100,17 +91,18 @@ export function AttendanceClient({
       const res = await fetch('/api/attendance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ courseId, date, marks: payload }),
+        body: JSON.stringify({ courseId: initialCourseId, date, marks: payload }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(data?.error ?? 'Could not save attendance')
+        toast.error(data?.error ?? 'Could not save attendance')
         return
       }
-      setMessage(`Saved ${data.marked} mark(s) for ${date}`)
+      toast.success(`Saved ${data.marked} mark(s) for ${date}`)
+      setReadOnly(true)
       router.refresh()
     } catch {
-      setError('Network error. Please try again.')
+      toast.error('Network error. Please try again.')
     } finally {
       setBusy(false)
     }
@@ -119,46 +111,37 @@ export function AttendanceClient({
   return (
     <div className="flex flex-col gap-5">
       <Card>
-        <CardContent className="flex flex-wrap items-end gap-4 p-5">
-          <div className="flex min-w-[200px] flex-1 flex-col gap-1.5">
-            <Label className="text-xs font-medium uppercase tracking-wide text-muted">Course</Label>
-            <select
-              className={selectClass}
-              value={courseId}
-              onChange={(e) => switchCourse(e.target.value)}
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+          <div className="flex flex-col gap-1.5">
+            <Link 
+              href="/dashboard/teacher/attendance" 
+              className="text-xs font-medium text-muted hover:text-foreground flex items-center gap-1 transition-colors w-fit"
             >
-              {courses.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.code} · {c.name}
-                </option>
-              ))}
-            </select>
+              <span className="material-symbols-outlined text-[14px]">arrow_back</span>
+              Back to courses
+            </Link>
+            <div className="text-lg font-semibold text-foreground">
+              {course ? `${course.code} · ${course.name}` : 'Unknown Course'}
+            </div>
           </div>
-          <div className="flex w-[190px] flex-col gap-1.5">
-            <Label className="text-xs font-medium uppercase tracking-wide text-muted">Date</Label>
-            <Input type="date" value={date} onChange={(e) => switchDate(e.target.value)} className="num" />
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="md" onClick={() => markAll('PRESENT')} disabled={busy}>
-              All present
-            </Button>
-            <Button variant="outline" size="md" onClick={() => markAll('ABSENT')} disabled={busy}>
-              All absent
-            </Button>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex w-[190px] flex-col gap-1.5">
+              <Label className="text-xs font-medium uppercase tracking-wide text-muted">Date</Label>
+              <Input type="date" value={date} onChange={(e) => switchDate(e.target.value)} className="num" />
+            </div>
+            {!readOnly && (
+              <div className="flex gap-2">
+                <Button variant="outline" size="md" onClick={() => markAll('PRESENT')} disabled={busy}>
+                  All present
+                </Button>
+                <Button variant="outline" size="md" onClick={() => markAll('ABSENT')} disabled={busy}>
+                  All absent
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
-
-      {error && (
-        <div className="animate-fade rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="animate-fade rounded-xl border border-success/30 bg-success/5 px-4 py-3 text-sm text-success">
-          {message}
-        </div>
-      )}
 
       <Card>
         <CardHeader>
@@ -170,10 +153,17 @@ export function AttendanceClient({
                 <span className="num">{credited}</span> credited as present or late
               </CardDescription>
             </div>
-            <Button variant="accent" onClick={submit} disabled={busy || !allMarked}>
-              <span className="material-symbols-outlined text-[18px]">save</span>
-              {busy ? 'Saving…' : 'Save attendance'}
-            </Button>
+            {readOnly ? (
+              <Button variant="outline" onClick={() => setReadOnly(false)}>
+                <span className="material-symbols-outlined text-[18px]">edit</span>
+                Edit attendance
+              </Button>
+            ) : (
+              <Button variant="accent" onClick={submit} disabled={busy || !allMarked}>
+                <span className="material-symbols-outlined text-[18px]">save</span>
+                {busy ? 'Saving…' : 'Save attendance'}
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="px-0">
@@ -204,24 +194,37 @@ export function AttendanceClient({
                       <td className="px-4 py-3 text-muted">{s.section ?? '—'}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1.5">
-                          {ATTENDANCE_STATUSES.map((status) => {
-                            const active = marks[s.id] === status
-                            return (
-                              <button
-                                key={status}
-                                type="button"
-                                onClick={() => setMarks((m) => ({ ...m, [s.id]: status }))}
-                                className={cn(
-                                  'rounded-lg border px-2.5 py-1 text-xs font-medium capitalize transition-colors',
-                                  active
-                                    ? STATUS_STYLE[status]
-                                    : 'border-border-strong bg-surface text-subtle hover:bg-background'
-                                )}
-                              >
-                                {status.toLowerCase()}
-                              </button>
-                            )
-                          })}
+                          {readOnly ? (
+                            <span
+                              className={cn(
+                                'rounded-lg border px-2.5 py-1 text-xs font-medium capitalize',
+                                marks[s.id]
+                                  ? STATUS_STYLE[marks[s.id]]
+                                  : 'border-border-strong bg-surface text-subtle'
+                              )}
+                            >
+                              {(marks[s.id] || 'unmarked').toLowerCase()}
+                            </span>
+                          ) : (
+                            (['PRESENT', 'ABSENT'] as const).map((status) => {
+                              const active = marks[s.id] === status
+                              return (
+                                <button
+                                  key={status}
+                                  type="button"
+                                  onClick={() => setMarks((m) => ({ ...m, [s.id]: status }))}
+                                  className={cn(
+                                    'rounded-lg border px-2.5 py-1 text-xs font-medium capitalize transition-colors',
+                                    active
+                                      ? STATUS_STYLE[status]
+                                      : 'border-border-strong bg-surface text-subtle hover:bg-background'
+                                  )}
+                                >
+                                  {status.toLowerCase()}
+                                </button>
+                              )
+                            })
+                          )}
                         </div>
                       </td>
                     </tr>

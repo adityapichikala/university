@@ -13,8 +13,8 @@ export default function AuditLogLoading() {
 
       <Card>
         <div className="flex flex-wrap gap-3 border-b border-border px-6 py-4">
-          {[190, 170, 130, 150, 150].map((w) => (
-            <div key={w} className="space-y-1">
+          {[190, 170, 130, 150, 150].map((w, i) => (
+            <div key={i} className="space-y-1">
               <Skeleton className="h-2 w-12" />
               <Skeleton className="h-9" style={{ width: w }} />
             </div>
