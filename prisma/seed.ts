@@ -5,7 +5,48 @@ import { gradeFromPercentage } from '../lib/academics'
 import { feeStatusFor } from '../lib/fees'
 import { computeFine, defaultDueDate } from '../lib/library'
 
-const prisma = new PrismaClient()
+/**
+ * Retry transient connection drops (P1001/P1008/P1017) with backoff.
+ *
+ * The seed script is a long sequence of small sequential queries; over a
+ * flaky network a single dropped connection mid-run would otherwise kill
+ * the whole (idempotent, re-runnable, but slow to re-reach the same point)
+ * process. Every query goes through this, so no call site needs to know.
+ */
+const prisma = new PrismaClient().$extends({
+  query: {
+    async $allOperations({ model, operation, args, query }) {
+      const maxAttempts = 8
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          return await query(args)
+        } catch (err) {
+          // Connection drops surface as either a known request error with a
+          // P10xx code, or a PrismaClientInitializationError whose own code
+          // can be undefined — so fall back to sniffing the message too.
+          const code = (err as { code?: string; errorCode?: string })?.code
+          const errorCode = (err as { errorCode?: string })?.errorCode
+          const message = err instanceof Error ? err.message : ''
+          const transient =
+            code === 'P1001' ||
+            code === 'P1008' ||
+            code === 'P1017' ||
+            errorCode === 'P1001' ||
+            errorCode === 'P1017' ||
+            message.includes("Can't reach database server") ||
+            message.includes('Connection closed') ||
+            message.includes('Connection reset')
+          if (!transient || attempt === maxAttempts) throw err
+          console.warn(
+            `  [retry] ${model}.${operation} failed (${code ?? errorCode ?? 'connection error'}), attempt ${attempt}/${maxAttempts}`,
+          )
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
+        }
+      }
+      throw new Error('unreachable')
+    },
+  },
+})
 
 const COLLEGE_ID = 'clg_apex'
 const DEPARTMENT_ID = 'dep_cse'

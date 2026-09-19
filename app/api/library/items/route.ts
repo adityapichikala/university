@@ -36,14 +36,11 @@ export async function GET(req: NextRequest) {
       ...scopes.college(ctx),
       ...(search && {
         OR: [
-          { title: { contains: search } },
-          { author: { contains: search } },
-          { isbn: { contains: search } },
+          { title: { contains: search, mode: 'insensitive' } },
+          { author: { contains: search, mode: 'insensitive' } },
+          { isbn: { contains: search, mode: 'insensitive' } },
         ],
       }),
-      // SQLite + Prisma: `contains` is case-insensitive for ASCII by default
-      // on SQLite only when the column is NOT using BINARY collation; we keep
-      // it simple and rely on the UI to send lower-cased terms.
       ...(availableOnly && { availableCopies: { gt: 0 } }),
     },
     select: {

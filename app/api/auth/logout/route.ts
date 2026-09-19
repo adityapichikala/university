@@ -23,3 +23,19 @@ export async function POST(req: NextRequest) {
   res.cookies.set(SESSION_COOKIE, '', { ...sessionCookieOptions(), maxAge: 0 })
   return res
 }
+
+/**
+ * GET variant: clears the cookie and redirects to /login, for server-side
+ * redirects (requireUser() etc. can't set cookies from a Server Component —
+ * only a Route Handler, middleware, or Server Action can).
+ *
+ * Without this, a session whose JWT still verifies but whose userId no
+ * longer exists (e.g. after a DB reset/reseed) never gets cleared: proxy.ts
+ * sees "a session exists" and bounces /login back to the dashboard, which
+ * fails its own DB check and redirects to /login again — an infinite loop.
+ */
+export async function GET(req: NextRequest) {
+  const res = NextResponse.redirect(new URL('/login', req.url))
+  res.cookies.set(SESSION_COOKIE, '', { ...sessionCookieOptions(), maxAge: 0 })
+  return res
+}

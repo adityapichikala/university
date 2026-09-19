@@ -1,4 +1,4 @@
-// University ERP — Prisma Schema (SQLite dev → PostgreSQL prod)
+// University ERP — Prisma Schema (PostgreSQL via Supabase)
 //
 // Multi-tenant: every tenant-owned model carries collegeId + @@index([collegeId]).
 // Option A from the architecture doc (§4.2): single college today, columns in
@@ -9,8 +9,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── String conventions (SQLite has no enums — keep these in sync with lib/roles.ts) ───
