@@ -1,4 +1,4 @@
-// University ERP — Prisma Schema (SQLite dev → PostgreSQL prod)
+// University ERP — Prisma Schema (PostgreSQL via Supabase)
 //
 // Multi-tenant: every tenant-owned model carries collegeId + @@index([collegeId]).
 // Option A from the architecture doc (§4.2): single college today, columns in

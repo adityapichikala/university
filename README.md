@@ -1,6 +1,6 @@
 # Apex University ERP
 
-A full-featured, multi-role campus management platform built with **Next.js 16**, **Prisma**, and **SQLite** (dev) / **PostgreSQL** (prod). The system serves 11 distinct roles — from students and faculty to wardens and placement officers — each with their own dashboard, permissions, and workflows.
+A full-featured, multi-role campus management platform built with **Next.js 16**, **Prisma**, and **PostgreSQL** (via [Supabase](https://supabase.com/)). The system serves 11 distinct roles from students and faculty to wardens and placement officers, each with their own dashboard, permissions, and workflows.
 
 ---
 
@@ -30,7 +30,7 @@ Apex University ERP is a unified campus management platform that consolidates ac
 |------|-------------|---------|
 | **Tier 1** | Role guard (route-level) | Each user belongs to exactly one of 11 roles and can only access their own dashboard namespace |
 | **Tier 2** | Permission guard (feature-level) | Fine-grained capabilities (`grade.entry`, `fee.manage`, ...) are granted per role and can be overridden per user |
-| **Tier 3** | Query scope (data-level) | Every DB query is scoped to `collegeId`, `departmentId`, or `userId` — no cross-tenant data leaks |
+| **Tier 3** | Query scope (data-level) | Every DB query is scoped to `collegeId`, `departmentId`, or `userId` ï¿½ no cross-tenant data leaks |
 
 ---
 
@@ -41,9 +41,8 @@ Apex University ERP is a unified campus management platform that consolidates ac
 | Framework | [Next.js 16](https://nextjs.org/) (App Router, Turbopack) |
 | Language | TypeScript 5 |
 | Database ORM | [Prisma 5](https://www.prisma.io/) |
-| Database (dev) | SQLite (`prisma/dev.db`) |
-| Database (prod) | PostgreSQL (swap `datasource` in `schema.prisma`) |
-| Auth | JWT via [`jose`](https://github.com/panva/jose) — no NextAuth |
+| Database | PostgreSQL, hosted on [Supabase](https://supabase.com/) (dev and prod) |
+| Auth | JWT via [`jose`](https://github.com/panva/jose) ï¿½ no NextAuth |
 | Styling | Tailwind CSS v4 + custom design tokens |
 | UI Components | Custom components (`components/ui/`) + [Base UI](https://base-ui.com/) |
 | Tables | [TanStack Table v8](https://tanstack.com/table) |
@@ -105,8 +104,7 @@ university/
 |   `-- ...                   # Domain modules (fees, hostel, library, ...)
 |-- prisma/
 |   |-- schema.prisma         # Single source of truth for the DB schema
-|   |-- seed.ts               # Demo data seeder
-|   `-- dev.db                # SQLite dev database
+|   `-- seed.ts               # Demo data seeder
 |-- scripts/                  # Standalone verification / smoke-test scripts
 |-- types/                    # Ambient TypeScript declarations
 |-- next.config.ts
@@ -129,17 +127,20 @@ university/
 # 1. Install dependencies (also runs prisma generate via postinstall)
 npm install
 
-# 2. Push the schema to the SQLite dev database
+# 2. Copy the env template and fill in your Supabase connection strings + JWT_SECRET
+cp .env.example .env
+
+# 3. Push the schema to your Supabase Postgres database
 npm run db:push
 
-# 3. Seed demo accounts and sample data
+# 4. Seed demo accounts and sample data
 npm run db:seed
 
-# 4. Start the development server
+# 5. Start the development server
 npm run dev
 ```
 
-Visit **http://localhost:3000** — you will be redirected to `/login`.
+Visit **http://localhost:3000** ï¿½ you will be redirected to `/login`.
 
 ### Demo accounts
 
@@ -163,21 +164,22 @@ All demo accounts use the password **`password123`**.
 
 ## Environment Variables
 
-Create a `.env` file at the project root (one ships with the repo for dev):
+Create a `.env` file at the project root â€” copy `.env.example` and fill in your own values (no `.env` ships with the repo; it's gitignored):
 
 ```dotenv
-# Required
-DATABASE_URL="file:./dev.db"           # SQLite (dev) or postgresql://... (prod)
+# Required â€” Supabase Settings -> Database -> Connection string
+DATABASE_URL="postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?pgbouncer=true"  # pooled, used by the app
+DIRECT_URL="postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres"                  # direct, used by `prisma migrate`
 JWT_SECRET="your-secret-at-least-32-chars"
 
-# Optional — email/OTP password reset
+# Optional ï¿½ email/OTP password reset
 SMTP_HOST="smtp.example.com"
 SMTP_PORT="587"
 SMTP_USER="user@example.com"
 SMTP_PASS="yourpassword"
 MAIL_FROM="no-reply@apex.edu"
 
-# Optional — move the Next.js build output outside OneDrive sync (Windows)
+# Optional ï¿½ move the Next.js build output outside OneDrive sync (Windows)
 NEXT_DIST_DIR="C:/next-build/university"
 ```
 
@@ -190,13 +192,13 @@ NEXT_DIST_DIR="C:/next-build/university"
 ### Schema highlights
 
 - **Multi-tenant ready**: every model has a `collegeId` column + index. Adding more colleges is a query-scope change, not a migration.
-- **SQLite now, PostgreSQL later**: enums are plain strings (validated in TypeScript) so the migration to Postgres only needs a `datasource` swap.
+- **Postgres via Supabase**: enums are still plain strings (validated in TypeScript) even though native Postgres enums are now available â€” kept as-is to minimize migration risk, not a technical constraint.
 - **Key models**: `College`, `Department`, `User`, `Course`, `Class`, `CourseEnrollment`, `Attendance`, `Assignment`, `Submission`, `Grade`, `Exam`, `ExamResult`, `FeeStructure`, `FeeRecord`, `FeePayment`, `LibraryItem`, `LibraryIssue`, `HostelRoom`, `HostelAllocation`, `HostelLeave`, `Employee`, `LeaveRequest`, `PlacementDrive`, `PlacementApplication`, `Notification`, `Certificate`, `AgentActionLog`.
 
 ### Useful commands
 
 ```bash
-npm run db:push      # Sync schema to DB (no migration files — dev only)
+npm run db:push      # Sync schema to DB (no migration files ï¿½ dev only)
 npm run db:migrate   # Create a named migration (staging / prod)
 npm run db:seed      # Seed demo data
 npm run db:reset     # Drop all data and re-seed
@@ -265,52 +267,52 @@ scopes.own(ctx)             // { studentId }    student's own rows
 ## Feature Modules
 
 ### Academics
-- **Courses** — per-department, teacher-assigned, section-access locks per class
-- **Timetable** — weekly slot grid per section with room assignments
-- **Calendar** — academic calendar with holidays, closures, events
-- **Attendance** — per-course, per-student; percentage dashboard for students
-- **Assignments** — teacher creates, students submit, teacher grades with rubric support
-- **Grading** — score + feedback + AI-suggested score field + re-grade history trail
-- **Exams and Results** — midterm/final/quiz types, semester-linked, publish gate (null = hidden from students)
+- **Courses** ï¿½ per-department, teacher-assigned, section-access locks per class
+- **Timetable** ï¿½ weekly slot grid per section with room assignments
+- **Calendar** ï¿½ academic calendar with holidays, closures, events
+- **Attendance** ï¿½ per-course, per-student; percentage dashboard for students
+- **Assignments** ï¿½ teacher creates, students submit, teacher grades with rubric support
+- **Grading** ï¿½ score + feedback + AI-suggested score field + re-grade history trail
+- **Exams and Results** ï¿½ midterm/final/quiz types, semester-linked, publish gate (null = hidden from students)
 
 ### Finance
-- **Fee Structures** — program x batch x amount x due date
-- **Fee Records** — one record per student per structure with installment payments
-- **Online Payment** — in-app modal to record a payment with method (cash, UPI, bank transfer)
+- **Fee Structures** ï¿½ program x batch x amount x due date
+- **Fee Records** ï¿½ one record per student per structure with installment payments
+- **Online Payment** ï¿½ in-app modal to record a payment with method (cash, UPI, bank transfer)
 
 ### Library
-- **Catalog** — title, author, ISBN, copy count, available copies (auto-decremented)
-- **Circulation** — issue/return with automatic fine calculation on overdue returns
+- **Catalog** ï¿½ title, author, ISBN, copy count, available copies (auto-decremented)
+- **Circulation** ï¿½ issue/return with automatic fine calculation on overdue returns
 
 ### Hostel
-- **Rooms** — block + room number + capacity management
-- **Allocations** — one active allocation per student
-- **Student Leave** — request -> warden approval -> printable QR leave slip + PDF download
+- **Rooms** ï¿½ block + room number + capacity management
+- **Allocations** ï¿½ one active allocation per student
+- **Student Leave** ï¿½ request -> warden approval -> printable QR leave slip + PDF download
 
 ### HR and Leave
-- **Employee Register** — links a `User` to designation, salary band, join date
-- **Staff Leave** — any staff files a request; HOD / HR approves; shared `LeaveQueue` component
+- **Employee Register** ï¿½ links a `User` to designation, salary band, join date
+- **Staff Leave** ï¿½ any staff files a request; HOD / HR approves; shared `LeaveQueue` component
 
 ### Placements
-- **Drives** — company, role, eligibility criteria, drive date, package offered, JD text
-- **Applications** — APPLIED -> SHORTLISTED -> INTERVIEWED -> OFFERED / REJECTED with withdrawal reason
+- **Drives** ï¿½ company, role, eligibility criteria, drive date, package offered, JD text
+- **Applications** ï¿½ APPLIED -> SHORTLISTED -> INTERVIEWED -> OFFERED / REJECTED with withdrawal reason
 
 ### Announcements
-- **Broadcast** — targeted by role / department / class / individual user
-- **Priority levels** — URGENT, HIGH, NORMAL, LOW
-- **Read receipts** — per-user, drives the bell badge count and top-of-page banner
+- **Broadcast** ï¿½ targeted by role / department / class / individual user
+- **Priority levels** ï¿½ URGENT, HIGH, NORMAL, LOW
+- **Read receipts** ï¿½ per-user, drives the bell badge count and top-of-page banner
 
 ### Registrar / Certificates
-- **Certificate types** — BONAFIDE, TRANSCRIPT, NO_DUES
-- **QR-verified download** — issued, logged, auditable
+- **Certificate types** ï¿½ BONAFIDE, TRANSCRIPT, NO_DUES
+- **QR-verified download** ï¿½ issued, logged, auditable
 
 ### Admin Governance
-- **User management** — create / update / deactivate accounts with full CSV/PDF export
-- **Per-user permission overrides** — Default | Allow | Deny matrix for every permission key
-- **Section access locks** — lock a class section out of a specific course (Tier 3)
-- **Department management** — create/rename departments, appoint HOD
-- **Admissions** — applicant pipeline with merit score, convert to student account
-- **Audit log** — immutable record of every governance write with before/after JSON
+- **User management** ï¿½ create / update / deactivate accounts with full CSV/PDF export
+- **Per-user permission overrides** ï¿½ Default | Allow | Deny matrix for every permission key
+- **Section access locks** ï¿½ lock a class section out of a specific course (Tier 3)
+- **Department management** ï¿½ create/rename departments, appoint HOD
+- **Admissions** ï¿½ applicant pipeline with merit score, convert to student account
+- **Audit log** ï¿½ immutable record of every governance write with before/after JSON
 
 ---
 
@@ -378,7 +380,7 @@ All tokens are defined in `app/globals.css` under `@theme` and referenced via Ta
 ### Conventions
 
 - Apply the `.num` CSS class to any numeric value (roll numbers, KPIs, IDs, amounts).
-- Icons: `<span className="material-symbols-outlined">icon_name</span>` — no separate icon library.
+- Icons: `<span className="material-symbols-outlined">icon_name</span>` ï¿½ no separate icon library.
 - Error UI: `bg-danger-soft text-danger` | Success UI: `bg-success-soft text-success`.
 - All cards use the `card` utility class (defined in `@utility` block).
 
@@ -415,7 +417,6 @@ npm run db:studio     # Prisma Studio on http://localhost:5555
 |------|--------|-------|
 | File uploads | Not implemented | `fileUrl` / `documentsUrl` fields exist but storage layer is not wired. Use an external bucket (S3, Cloudinary). |
 | Email delivery | Console fallback in dev | Set `SMTP_*` env vars to actually send OTP emails. |
-| PostgreSQL | Planned | Schema is Postgres-compatible. Swap `provider = "sqlite"` to `"postgresql"` and update `DATABASE_URL`. |
 | Admin notifications | Soon | Nav item exists; page not yet built. |
 | Finance reports | Soon | Summarised fee analytics planned. |
 | Library bulk import | Soon | CSV catalog import planned. |
@@ -427,8 +428,8 @@ npm run db:studio     # Prisma Studio on http://localhost:5555
 
 ## Architecture Notes
 
-- **No `next-auth`** — the JWT is managed manually with `jose` so it works in the Edge runtime with no third-party session store dependency.
-- **No client-side data fetching** — all data loading happens in Server Components via Prisma. Client components receive fully serialised props.
-- **Audit trail** — every write that changes permissions, certificates, or financial records is written to `AgentActionLog` with full before/after JSON snapshots.
-- **Crash telemetry** — `app/global-error.tsx` catches uncaught client errors and reports them to `/api/telemetry` with a structured payload.
-- **OneDrive compatibility** — `next.config.ts` reads `NEXT_DIST_DIR` to place the build cache outside the synced folder, avoiding Windows EPERM errors during `next build`.
+- **No `next-auth`** ï¿½ the JWT is managed manually with `jose` so it works in the Edge runtime with no third-party session store dependency.
+- **No client-side data fetching** ï¿½ all data loading happens in Server Components via Prisma. Client components receive fully serialised props.
+- **Audit trail** ï¿½ every write that changes permissions, certificates, or financial records is written to `AgentActionLog` with full before/after JSON snapshots.
+- **Crash telemetry** ï¿½ `app/global-error.tsx` catches uncaught client errors and reports them to `/api/telemetry` with a structured payload.
+- **OneDrive compatibility** ï¿½ `next.config.ts` reads `NEXT_DIST_DIR` to place the build cache outside the synced folder, avoiding Windows EPERM errors during `next build`.

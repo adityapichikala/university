@@ -84,7 +84,10 @@ function buildWhere(filters: AuditLogFilters) {
   if (filters.q?.trim()) {
     const q = filters.q.trim()
     andConditions.push({
-      OR: [{ targetEntity: { contains: q } }, { details: { contains: q } }]
+      OR: [
+        { targetEntity: { contains: q, mode: 'insensitive' } },
+        { details: { contains: q, mode: 'insensitive' } },
+      ]
     })
   }
 

@@ -2,7 +2,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from './db'
-import { SESSION_COOKIE, verifySession, type SessionPayload } from './auth'
+import { SESSION_COOKIE, sessionCookieOptions, verifySession, type SessionPayload } from './auth'
 import { getDashboardPath, roleSlug, type Role } from './roles'
 
 /* ============================================================================
@@ -151,7 +151,10 @@ export async function requireUser(options: RequireOptions = {}): Promise<AuthCon
   if (!session) redirect('/login')
 
   const ctx = await buildContext(session)
-  if (!ctx) redirect('/login')
+  // A valid JWT pointing at a user that no longer exists (or is inactive) is
+  // a stale session, not "logged out" — go through the route that clears the
+  // cookie, or proxy.ts will keep bouncing /login back here forever.
+  if (!ctx) redirect('/api/auth/logout')
 
   if (!matchesRoute(ctx.user, options.route) || !matchesRoles(ctx.user, options.roles)) {
     redirect(getDashboardPath(ctx.user.role))
@@ -179,7 +182,7 @@ export type AuthorizedResult =
   | { ok: true; ctx: AuthContext }
   | { ok: false; response: NextResponse }
 
-function deny(status: 401 | 403, message: string): AuthorizedResult {
+function deny(status: 401 | 403, message: string): { ok: false; response: NextResponse } {
   return { ok: false, response: NextResponse.json({ error: message }, { status }) }
 }
 
@@ -192,7 +195,14 @@ export async function authorize(
   if (!session) return deny(401, 'Authentication required')
 
   const ctx = await buildContext(session)
-  if (!ctx) return deny(401, 'Authentication required')
+  if (!ctx) {
+    // Same stale-session case as requireUser(): a verifiable JWT for a user
+    // that's gone from the DB. Clear it so the client doesn't keep resending
+    // a dead cookie on every retry.
+    const result = deny(401, 'Authentication required')
+    result.response.cookies.set(SESSION_COOKIE, '', { ...sessionCookieOptions(), maxAge: 0 })
+    return result
+  }
 
   if (!matchesRoute(ctx.user, options.route) || !matchesRoles(ctx.user, options.roles)) {
     return deny(403, 'Forbidden: wrong role for this route')
