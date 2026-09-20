@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/db'
 import { audit } from '@/lib/audit'
 import { fieldErrors, resetPasswordSchema, verifyOtp } from '@/lib/password-reset'
+import { checkRateLimit, getIp } from '@/lib/rate-limit'
 
 /**
  * POST /api/auth/reset-password — step 2: trade the code for a new password.
@@ -24,6 +25,13 @@ export async function POST(req: Request) {
       { error: 'Invalid request payload', fields: fieldErrors(parsed.error) },
       { status: 400 }
     )
+  }
+
+  const ip = getIp(req)
+  // Max 5 code attempts per IP per 10 minutes — a 6-digit OTP is brute-forceable
+  // inside its own TTL without this.
+  if (checkRateLimit(ip, 5, 10 * 60_000)) {
+    return NextResponse.json({ error: 'Too many attempts. Please try again later.' }, { status: 429 })
   }
 
   const { otp, newPassword } = parsed.data
